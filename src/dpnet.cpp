@@ -1,7 +1,9 @@
 #include <atomic>
+#include <dplay8.h>
 #include <objbase.h>
 #include <windows.h>
 
+#include "DirectPlay8Address.hpp"
 #include "DirectPlay8Peer.hpp"
 #include "Factory.hpp"
 
@@ -30,7 +32,12 @@ HRESULT CALLBACK DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID *ppv)
 		return CLASS_E_CLASSNOTAVAILABLE;
 	}
 	
-	if(rclsid == CLSID_DirectPlay8Peer)
+	if(rclsid == CLSID_DirectPlay8Address)
+	{
+		*((IUnknown**)(ppv)) = new Factory<DirectPlay8Address, IID_IDirectPlay8Address>(&global_refcount);
+		return S_OK;
+	}
+	else if(rclsid == CLSID_DirectPlay8Peer)
 	{
 		*((IUnknown**)(ppv)) = new Factory<DirectPlay8Peer, IID_IDirectPlay8Peer>(&global_refcount);
 		return S_OK;
