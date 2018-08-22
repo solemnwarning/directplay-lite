@@ -4,16 +4,80 @@
 #include <atomic>
 #include <dplay8.h>
 #include <objbase.h>
+#include <string>
+#include <vector>
 
 class DirectPlay8Address: public IDirectPlay8Address
 {
 	private:
+		class Component
+		{
+			public:
+				const std::wstring name;
+				const DWORD type;
+				
+				virtual ~Component();
+				
+				virtual Component *clone() = 0;
+				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType) = 0;
+			
+			protected:
+				Component(const std::wstring &name, DWORD type);
+		};
+		
+		class StringComponentW: public Component
+		{
+			public:
+				const std::wstring value;
+				
+				StringComponentW(const std::wstring &name, const wchar_t *lpvData, DWORD dwDataSize);
+				virtual Component *clone();
+				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType);
+		};
+		
+		class StringComponentA: public Component
+		{
+			public:
+				const std::string value;
+				
+				StringComponentA(const std::wstring &name, const char *lpvData, DWORD dwDataSize);
+				virtual Component *clone();
+				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType);
+		};
+		
+		class DWORDComponent: public Component
+		{
+			public:
+				const DWORD value;
+				
+				DWORDComponent(const std::wstring &name, DWORD value);
+				virtual Component *clone();
+				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType);
+		};
+		
+		class GUIDComponent: public Component
+		{
+			public:
+				const GUID value;
+				
+				GUIDComponent(const std::wstring &name, GUID value);
+				virtual Component *clone();
+				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType);
+		};
+		
 		std::atomic<unsigned int> * const global_refcount;
 		ULONG local_refcount;
-	
+		
+		std::vector<Component*> components;
+		std::vector<unsigned char> user_data;
+		
+		void clear_components();
+		void replace_components(const std::vector<Component*> src);
+		
 	public:
 		DirectPlay8Address(std::atomic<unsigned int> *global_refcount);
-		virtual ~DirectPlay8Address() {}
+		DirectPlay8Address(const DirectPlay8Address &src);
+		virtual ~DirectPlay8Address();
 		
 		/* IUnknown */
 		virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override;
