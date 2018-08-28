@@ -40,6 +40,26 @@ TEST_F(DirectPlay8AddressInitial, HasNoComponents)
 	EXPECT_EQ(num, (DWORD)(0));
 }
 
+TEST_F(DirectPlay8AddressInitial, GetSP)
+{
+	GUID vbuf;
+	ASSERT_EQ(idp8->GetSP(&vbuf), DPNERR_DOESNOTEXIST);
+}
+
+TEST_F(DirectPlay8AddressInitial, GetDevice)
+{
+	GUID vbuf;
+	ASSERT_EQ(idp8->GetDevice(&vbuf), DPNERR_DOESNOTEXIST);
+}
+
+TEST_F(DirectPlay8AddressInitial, GetUserData)
+{
+	unsigned char buf[256];
+	DWORD size = sizeof(buf);
+	
+	ASSERT_EQ(idp8->GetUserData(buf, &size), DPNERR_DOESNOTEXIST);
+}
+
 class DirectPlay8AddressWithWStringComponent: public DirectPlay8AddressInitial
 {
 	protected:
@@ -454,4 +474,185 @@ TEST_F(DirectPlay8AddressWithGUIDComponent, ComponentByNameBufferSizeBig)
 	EXPECT_EQ(type, (DWORD)(DPNA_DATATYPE_GUID));
 	
 	EXPECT_EQ(*(GUID*)(vbuf), REFVAL);
+}
+
+class DirectPlay8AddressSetSP: public DirectPlay8AddressInitial
+{
+	protected:
+		virtual void SetUp() override
+		{
+			ASSERT_EQ(idp8->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		}
+};
+
+TEST_F(DirectPlay8AddressSetSP, GetSP)
+{
+	GUID vbuf;
+	ASSERT_EQ(idp8->GetSP(&vbuf), S_OK);
+	EXPECT_EQ(vbuf, CLSID_DP8SP_TCPIP);
+}
+
+TEST_F(DirectPlay8AddressSetSP, GetNumComponents)
+{
+	DWORD num;
+	ASSERT_EQ(idp8->GetNumComponents(&num), S_OK);
+	EXPECT_EQ(num, (DWORD)(1));
+}
+
+TEST_F(DirectPlay8AddressSetSP, GetComponentByName)
+{
+	GUID vbuf;
+	DWORD vsize = sizeof(vbuf);
+	DWORD type;
+	
+	ASSERT_EQ(idp8->GetComponentByName(DPNA_KEY_PROVIDER, (void*)(&vbuf), &vsize, &type), S_OK);
+	
+	ASSERT_EQ(vsize, sizeof(vbuf));
+	EXPECT_EQ(vbuf, CLSID_DP8SP_TCPIP);
+}
+
+class DirectPlay8AddressSetSPTwice: public DirectPlay8AddressInitial
+{
+	protected:
+		virtual void SetUp() override
+		{
+			ASSERT_EQ(idp8->SetSP(&CLSID_DP8SP_TCPIP),  S_OK);
+			ASSERT_EQ(idp8->SetSP(&CLSID_DP8SP_SERIAL), S_OK);
+		}
+};
+
+TEST_F(DirectPlay8AddressSetSPTwice, GetSP)
+{
+	GUID vbuf;
+	ASSERT_EQ(idp8->GetSP(&vbuf), S_OK);
+	EXPECT_EQ(vbuf, CLSID_DP8SP_SERIAL);
+}
+
+TEST_F(DirectPlay8AddressSetSPTwice, GetNumComponents)
+{
+	DWORD num;
+	ASSERT_EQ(idp8->GetNumComponents(&num), S_OK);
+	EXPECT_EQ(num, (DWORD)(1));
+}
+
+TEST_F(DirectPlay8AddressSetSPTwice, GetComponentByName)
+{
+	GUID vbuf;
+	DWORD vsize = sizeof(vbuf);
+	DWORD type;
+	
+	ASSERT_EQ(idp8->GetComponentByName(DPNA_KEY_PROVIDER, (void*)(&vbuf), &vsize, &type), S_OK);
+	
+	ASSERT_EQ(vsize, sizeof(vbuf));
+	EXPECT_EQ(vbuf, CLSID_DP8SP_SERIAL);
+}
+
+class DirectPlay8AddressSetDevice: public DirectPlay8AddressInitial
+{
+	protected:
+		virtual void SetUp() override
+		{
+			/* Interface GUIDs are system-dependant, but it doesn't need to be real. */
+			ASSERT_EQ(idp8->SetDevice(&CLSID_DP8SP_BLUETOOTH), S_OK);
+		}
+};
+
+TEST_F(DirectPlay8AddressSetDevice, GetDevice)
+{
+	GUID vbuf;
+	ASSERT_EQ(idp8->GetDevice(&vbuf), S_OK);
+	EXPECT_EQ(vbuf, CLSID_DP8SP_BLUETOOTH);
+}
+
+TEST_F(DirectPlay8AddressSetDevice, GetNumComponents)
+{
+	DWORD num;
+	ASSERT_EQ(idp8->GetNumComponents(&num), S_OK);
+	EXPECT_EQ(num, (DWORD)(1));
+}
+
+TEST_F(DirectPlay8AddressSetDevice, GetComponentByName)
+{
+	GUID vbuf;
+	DWORD vsize = sizeof(vbuf);
+	DWORD type;
+	
+	ASSERT_EQ(idp8->GetComponentByName(DPNA_KEY_DEVICE, (void*)(&vbuf), &vsize, &type), S_OK);
+	
+	ASSERT_EQ(vsize, sizeof(vbuf));
+	EXPECT_EQ(vbuf, CLSID_DP8SP_BLUETOOTH);
+}
+
+class DirectPlay8AddressSetUserData: public DirectPlay8AddressInitial
+{
+	protected:
+		const unsigned char REFDATA[22] = { 0x00, 0x01, 0x02, 0x03, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 0xFF, 0xFE };
+		const DWORD         REFSIZE     = 22;
+		
+		virtual void SetUp() override
+		{
+			/* Interface GUIDs are system-dependant, but it doesn't need to be real. */
+			ASSERT_EQ(idp8->SetUserData(REFDATA, REFSIZE), S_OK);
+		}
+};
+
+TEST_F(DirectPlay8AddressSetUserData, GetUserDataSizeZero)
+{
+	DWORD size = 0;
+	
+	ASSERT_EQ(idp8->GetUserData(NULL, &size), DPNERR_BUFFERTOOSMALL);
+	ASSERT_EQ(size, REFSIZE);
+}
+
+TEST_F(DirectPlay8AddressSetUserData, GetUserDataSizeSmall)
+{
+	unsigned char buf[REFSIZE - 1];
+	DWORD size = sizeof(buf);
+	
+	ASSERT_EQ(idp8->GetUserData(buf, &size), DPNERR_BUFFERTOOSMALL);
+	ASSERT_EQ(size, REFSIZE);
+}
+
+TEST_F(DirectPlay8AddressSetUserData, GetUserDataSizeExact)
+{
+	unsigned char buf[REFSIZE];
+	DWORD size = sizeof(buf);
+	
+	ASSERT_EQ(idp8->GetUserData(buf, &size), S_OK);
+	
+	ASSERT_EQ(size, REFSIZE);
+	EXPECT_EQ(std::string((char*)(buf), REFSIZE), std::string((char*)(REFDATA), REFSIZE));
+}
+
+TEST_F(DirectPlay8AddressSetUserData, GetUserDataSizeBig)
+{
+	unsigned char buf[256];
+	DWORD size = sizeof(buf);
+	
+	ASSERT_EQ(idp8->GetUserData(buf, &size), S_OK);
+	
+	/* BUG: DirectPlay is supposed to set pdwBufferSize to the size of the data passed to
+	 * SetUserData(), the DirectX implementation doesn't, so we don't.
+	*/
+	// ASSERT_EQ(size, REFSIZE);
+	EXPECT_EQ(size, sizeof(buf));
+	
+	EXPECT_EQ(std::string((char*)(buf), REFSIZE), std::string((char*)(REFDATA), REFSIZE));
+}
+
+TEST_F(DirectPlay8AddressSetUserData, GetNumComponents)
+{
+	DWORD num;
+	ASSERT_EQ(idp8->GetNumComponents(&num), S_OK);
+	EXPECT_EQ(num, (DWORD)(0));
+}
+
+TEST_F(DirectPlay8AddressSetUserData, Clear)
+{
+	ASSERT_EQ(idp8->Clear(), S_OK);
+	
+	unsigned char buf[256];
+	DWORD size = sizeof(buf);
+	
+	ASSERT_EQ(idp8->GetUserData(buf, &size), DPNERR_DOESNOTEXIST);
 }

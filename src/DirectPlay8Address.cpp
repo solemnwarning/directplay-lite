@@ -175,7 +175,12 @@ HRESULT DirectPlay8Address::GetUserData(LPVOID pvUserData, PDWORD pdwBufferSize)
 	if(pvUserData != NULL && *pdwBufferSize >= user_data.size())
 	{
 		memcpy(pvUserData, user_data.data(), user_data.size());
-		*pdwBufferSize = user_data.size();
+		
+		/* BUG: DirectPlay is supposed to set pdwBufferSize to the size of the data passed to
+		 * SetUserData(), the DirectX implementation doesn't, so we don't.
+		*/
+		// *pdwBufferSize = user_data.size();
+		
 		return S_OK;
 	}
 	else{
