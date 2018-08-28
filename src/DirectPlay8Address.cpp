@@ -370,14 +370,14 @@ HRESULT DirectPlay8Address::StringComponentA::get_component(LPVOID pvBuffer, PDW
 {
 	*pdwDataType = DPNA_DATATYPE_STRING_ANSI;
 	
-	if(*pdwBufferSize > value.length() && pvBuffer != NULL)
+	if(*pdwBufferSize >= value.length() && pvBuffer != NULL)
 	{
-		strcpy((char*)(pvBuffer), value.c_str());
-		*pdwBufferSize = value.length() + 1;
+		memcpy(pvBuffer, value.data(), value.length());
+		*pdwBufferSize = value.length();
 		return S_OK;
 	}
 	else{
-		*pdwBufferSize = value.length() + 1;
+		*pdwBufferSize = value.length();
 		return DPNERR_BUFFERTOOSMALL;
 	}
 }
