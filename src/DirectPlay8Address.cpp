@@ -300,7 +300,14 @@ HRESULT DirectPlay8Address::AddComponent(CONST WCHAR* CONST pwszName, CONST void
 		*existing_component = new_component;
 	}
 	else{
-		components.push_back(new_component);
+		if(wcscmp(pwszName, DPNA_KEY_PROVIDER) == 0)
+		{
+			/* Provider is always the first component. */
+			components.insert(components.begin(), new_component);
+		}
+		else{
+			components.push_back(new_component);
+		}
 	}
 	
 	return S_OK;
