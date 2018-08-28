@@ -203,7 +203,8 @@ HRESULT DirectPlay8Address::SetUserData(CONST void* CONST pvUserData, CONST DWOR
 
 HRESULT DirectPlay8Address::GetNumComponents(PDWORD pdwNumComponents)
 {
-	return components.size();
+	*pdwNumComponents = components.size();
+	return S_OK;
 }
 
 HRESULT DirectPlay8Address::GetComponentByName(CONST WCHAR* CONST pwszName, LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType)
@@ -339,7 +340,7 @@ DirectPlay8Address::Component::Component(const std::wstring &name, DWORD type):
 DirectPlay8Address::Component::~Component() {}
 
 DirectPlay8Address::StringComponentW::StringComponentW(const std::wstring &name, const wchar_t *lpvData, DWORD dwDataSize):
-	Component(name, DPNA_DATATYPE_STRING), value(lpvData, dwDataSize) {}
+	Component(name, DPNA_DATATYPE_STRING), value(lpvData, dwDataSize / sizeof(wchar_t)) {}
 
 DirectPlay8Address::Component *DirectPlay8Address::StringComponentW::clone()
 {
@@ -350,14 +351,14 @@ HRESULT DirectPlay8Address::StringComponentW::get_component(LPVOID pvBuffer, PDW
 {
 	*pdwDataType = DPNA_DATATYPE_STRING;
 	
-	if(*pdwBufferSize > value.length() && pvBuffer != NULL)
+	if(*pdwBufferSize >= (value.length() * sizeof(wchar_t)) && pvBuffer != NULL)
 	{
-		wcscpy((wchar_t*)(pvBuffer), value.c_str());
-		*pdwBufferSize = value.length() + 1;
+		wcsncpy((wchar_t*)(pvBuffer), value.data(), value.length());
+		*pdwBufferSize = value.length() * sizeof(wchar_t);
 		return S_OK;
 	}
 	else{
-		*pdwBufferSize = value.length() + 1;
+		*pdwBufferSize = value.length() * sizeof(wchar_t);
 		return DPNERR_BUFFERTOOSMALL;
 	}
 }
