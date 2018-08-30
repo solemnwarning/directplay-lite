@@ -5,8 +5,8 @@ TEST_CXXFLAGS := $(CXXFLAGS) -I./googletest/include/
 
 all: dpnet.dll
 
-dpnet.dll: src/dpnet.o src/dpnet.def src/DirectPlay8Address.o src/DirectPlay8Peer.o
-	$(CXX) $(CXXFLAGS) -Wl,--enable-stdcall-fixup -shared -o $@ $^ -ldxguid -static-libstdc++ -static-libgcc
+dpnet.dll: src/dpnet.o src/dpnet.def src/DirectPlay8Address.o src/DirectPlay8Peer.o src/network.o
+	$(CXX) $(CXXFLAGS) -Wl,--enable-stdcall-fixup -shared -o $@ $^ -ldxguid -lws2_32 -static-libstdc++ -static-libgcc
 
 tests/DirectPlay8Address.exe: tests/DirectPlay8Address.o src/DirectPlay8Address.o googletest/src/gtest-all.o googletest/src/gtest_main.o
 	$(CXX) $(TEST_CXXFLAGS) -o $@ $^  -ldxguid -lole32 -static-libstdc++ -static-libgcc

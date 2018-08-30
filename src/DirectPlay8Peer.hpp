@@ -3,7 +3,9 @@
 
 #include <atomic>
 #include <dplay8.h>
+#include <map>
 #include <objbase.h>
+#include <stdint.h>
 
 class DirectPlay8Peer: public IDirectPlay8Peer
 {
@@ -11,9 +13,43 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		std::atomic<unsigned int> * const global_refcount;
 		ULONG local_refcount;
 		
+		PFNDPNMESSAGEHANDLER message_handler;
+		PVOID message_handler_ctx;
+		
+		enum {
+			STATE_DISCONNECTED,
+			STATE_HOSTING,
+			STATE_CONNECTED,
+		} state;
+		
+		GUID instance_guid;
+		GUID application_guid;
+		DWORD max_players;
+		std::wstring session_name;
+		std::wstring password;
+		std::vector<unsigned char> application_data;
+		
+		int udp_socket;        /* UDP socket, used for general send/recv operations. */
+		int listener_socket;   /* TCP listener socket. */
+		int discovery_socket;  /* Discovery UDP sockets, RECIEVES broadcasts only. */
+		
+		struct Player
+		{
+			/* This is the TCP socket to the peer, we may have connected to it, or it
+			 * may have connected to us depending who joined the session first, that
+			 * doesn't really matter.
+			*/
+			int sock;
+			
+			uint32_t ip;    /* IPv4 address, network byte order. */
+			uint16_t port;  /* Port, host byte order. */
+		};
+		
+		std::map<DPNID, Player> peers;
+		
 	public:
 		DirectPlay8Peer(std::atomic<unsigned int> *global_refcount);
-		virtual ~DirectPlay8Peer() {}
+		virtual ~DirectPlay8Peer();
 		
 		/* IUnknown */
 		virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override;

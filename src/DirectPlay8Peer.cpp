@@ -1,10 +1,14 @@
+#include <winsock2.h>
 #include <atomic>
 #include <dplay8.h>
 #include <objbase.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <windows.h>
 
+#include "DirectPlay8Address.hpp"
 #include "DirectPlay8Peer.hpp"
+#include "network.hpp"
 
 #define UNIMPLEMENTED(fmt, ...) \
 	fprintf(stderr, "Unimplemented method: " fmt "\n", ## __VA_ARGS__); \
@@ -12,10 +16,16 @@
 
 DirectPlay8Peer::DirectPlay8Peer(std::atomic<unsigned int> *global_refcount):
 	global_refcount(global_refcount),
-	local_refcount(0)
+	local_refcount(0),
+	state(STATE_DISCONNECTED),
+	udp_socket(-1),
+	listener_socket(-1),
+	discovery_socket(-1)
 {
 	AddRef();
 }
+
+DirectPlay8Peer::~DirectPlay8Peer() {}
 
 HRESULT DirectPlay8Peer::QueryInterface(REFIID riid, void **ppvObject)
 {
@@ -61,7 +71,10 @@ ULONG DirectPlay8Peer::Release(void)
 
 HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSAGEHANDLER pfn, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::Initialize");
+	message_handler     = pfn;
+	message_handler_ctx = pvUserContext;
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::EnumServiceProviders(CONST GUID* CONST pguidServiceProvider, CONST GUID* CONST pguidApplication, DPN_SERVICE_PROVIDER_INFO* CONST pSPInfoBuffer, DWORD* CONST pcbEnumData, DWORD* CONST pcReturned, CONST DWORD dwFlags)
@@ -91,17 +104,192 @@ HRESULT DirectPlay8Peer::GetSendQueueInfo(CONST DPNID dpnid, DWORD* CONST pdwNum
 
 HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDirectPlay8Address **CONST prgpDeviceInfo, CONST DWORD cDeviceInfo, CONST DPN_SECURITY_DESC* CONST pdnSecurity, CONST DPN_SECURITY_CREDENTIALS* CONST pdnCredentials, void* CONST pvPlayerContext, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::Host");
+	if(state != STATE_DISCONNECTED)
+	{
+		return DPNERR_ALREADYCONNECTED;
+	}
+	
+	if(pdnAppDesc->dwSize != sizeof(DPN_APPLICATION_DESC))
+	{
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	if(pdnAppDesc->dwFlags & DPNSESSION_CLIENT_SERVER)
+	{
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	if(pdnAppDesc->dwFlags & DPNSESSION_MIGRATE_HOST)
+	{
+		/* Not supported yet. */
+	}
+	
+	application_guid = pdnAppDesc->guidApplication;
+	max_players      = pdnAppDesc->dwMaxPlayers;
+	session_name     = pdnAppDesc->pwszSessionName;
+	
+	if(pdnAppDesc->dwFlags & DPNSESSION_REQUIREPASSWORD)
+	{
+		password = pdnAppDesc->pwszPassword;
+	}
+	else{
+		password.clear();
+	}
+	
+	application_data.clear();
+	
+	if(pdnAppDesc->pvApplicationReservedData != NULL && pdnAppDesc->dwApplicationReservedDataSize > 0)
+	{
+		application_data.insert(application_data.begin(),
+			(unsigned char*)(pdnAppDesc->pvApplicationReservedData),
+			(unsigned char*)(pdnAppDesc->pvApplicationReservedData) + pdnAppDesc->dwApplicationReservedDataSize);
+	}
+	
+	uint32_t ipaddr = htonl(INADDR_ANY);
+	uint16_t port   = 0;
+	
+	for(DWORD i = 0; i < cDeviceInfo; ++i)
+	{
+		DirectPlay8Address *addr = (DirectPlay8Address*)(prgpDeviceInfo[i]);
+		
+		DWORD addr_port_value;
+		DWORD addr_port_size = sizeof(addr_port_value);
+		DWORD addr_port_type;
+		
+		if(addr->GetComponentByName(DPNA_KEY_PORT, &addr_port_value, &addr_port_size, &addr_port_type) == S_OK
+			&& addr_port_type == DPNA_DATATYPE_DWORD)
+		{
+			if(port != 0 && port != addr_port_value)
+			{
+				/* Multiple ports specified, don't support this yet. */
+				return DPNERR_INVALIDPARAM;
+			}
+			else{
+				port = addr_port_value;
+			}
+		}
+	}
+	
+	if(port == 0)
+	{
+		port = DEFAULT_HOST_PORT;
+	}
+	
+	udp_socket      = create_udp_socket     (ipaddr, port);
+	listener_socket = create_listener_socket(ipaddr, port);
+	
+	if(udp_socket == -1 || listener_socket == -1)
+	{
+		return DPNERR_GENERIC;
+	}
+	
+	if(!(pdnAppDesc->dwFlags & DPNSESSION_NODPNSVR))
+	{
+		discovery_socket = create_discovery_socket();
+	}
+	
+	state = STATE_HOSTING;
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDescBuffer, DWORD* CONST pcbDataSize, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::GetApplicationDesc");
+	if(state == STATE_DISCONNECTED)
+	{
+		return DPNERR_NOCONNECTION;
+	}
+	
+	DWORD required_size = sizeof(DPN_APPLICATION_DESC)
+		+ (password.length() + !password.empty()) * sizeof(wchar_t)
+		+ application_data.size();
+	
+	if(pAppDescBuffer != NULL && *pcbDataSize >= required_size)
+	{
+		unsigned char *extra_at = (unsigned char*)(pAppDescBuffer);
+		
+		pAppDescBuffer->dwSize = sizeof(*pAppDescBuffer);
+		pAppDescBuffer->dwFlags = 0;
+		pAppDescBuffer->guidInstance     = instance_guid;
+		pAppDescBuffer->guidApplication  = application_guid;
+		pAppDescBuffer->dwMaxPlayers     = max_players;
+		pAppDescBuffer->dwCurrentPlayers = peers.size() + 1;
+		
+		if(!password.empty())
+		{
+			wcscpy((wchar_t*)(extra_at), password.c_str());
+			
+			pAppDescBuffer->dwFlags |= DPNSESSION_REQUIREPASSWORD;
+			pAppDescBuffer->pwszPassword = (wchar_t*)(extra_at);
+			
+			extra_at += (password.length() + 1) * sizeof(wchar_t);
+		}
+		else{
+			pAppDescBuffer->pwszPassword = NULL;
+		}
+		
+		pAppDescBuffer->pvReservedData     = NULL;
+		pAppDescBuffer->dwReservedDataSize = 0;
+		
+		if(!application_data.empty())
+		{
+			memcpy(extra_at, application_data.data(), application_data.size());
+			
+			pAppDescBuffer->pvApplicationReservedData     = extra_at;
+			pAppDescBuffer->dwApplicationReservedDataSize = application_data.size();
+			
+			extra_at += application_data.size();
+		}
+		else{
+			pAppDescBuffer->pvApplicationReservedData     = NULL;
+			pAppDescBuffer->dwApplicationReservedDataSize = 0;
+		}
+		
+		return S_OK;
+	}
+	else{
+		*pcbDataSize = sizeof(*pAppDescBuffer);
+		return DPNERR_BUFFERTOOSMALL;
+	}
 }
 
 HRESULT DirectPlay8Peer::SetApplicationDesc(CONST DPN_APPLICATION_DESC* CONST pad, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::SetApplicationDesc");
+	if(state == STATE_HOSTING)
+	{
+		if(pad->dwMaxPlayers > 0 && pad->dwMaxPlayers <= peers.size())
+		{
+			/* Can't set dwMaxPlayers below current player count. */
+			return DPNERR_INVALIDPARAM;
+		}
+		
+		max_players  = pad->dwMaxPlayers;
+		session_name = pad->pwszSessionName;
+		
+		if(pad->dwFlags & DPNSESSION_REQUIREPASSWORD)
+		{
+			password = pad->pwszPassword;
+		}
+		else{
+			password.clear();
+		}
+		
+		application_data.clear();
+		
+		if(pad->pvApplicationReservedData != NULL && pad->dwApplicationReservedDataSize > 0)
+		{
+			application_data.insert(application_data.begin(),
+				(unsigned char*)(pad->pvApplicationReservedData),
+				(unsigned char*)(pad->pvApplicationReservedData) + pad->dwApplicationReservedDataSize);
+		}
+		
+		/* TODO: Notify peers */
+		
+		return S_OK;
+	}
+	else{
+		return DPNERR_NOTHOST;
+	}
 }
 
 HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, void* CONST pvGroupContext, void* CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
@@ -144,9 +332,9 @@ HRESULT DirectPlay8Peer::EnumGroupMembers(CONST DPNID dpnid, DPNID* CONST prgdpn
 	UNIMPLEMENTED("DirectPlay8Peer::EnumGroupMembers");
 }
 
-HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo,PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
+HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo, PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::SetPeerInfo");
+	UNIMPLEMENTED("DirectPlay8Peer::SetPeerInfo(%p, %p, %p, %u)", pdpnPlayerInfo, pvAsyncContext, phAsyncHandle, (unsigned)(dwFlags));
 }
 
 HRESULT DirectPlay8Peer::GetPeerInfo(CONST DPNID dpnid, DPN_PLAYER_INFO* CONST pdpnPlayerInfo, DWORD* CONST pdwSize, CONST DWORD dwFlags)
