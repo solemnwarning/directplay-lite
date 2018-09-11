@@ -10,6 +10,7 @@ const uint32_t FIELD_TYPE_NULL    = 0;
 const uint32_t FIELD_TYPE_DWORD   = 1;
 const uint32_t FIELD_TYPE_DATA    = 2;
 const uint32_t FIELD_TYPE_WSTRING = 3;
+const uint32_t FIELD_TYPE_GUID    = 4;
 
 PacketSerialiser::PacketSerialiser(uint32_t type)
 {
@@ -77,6 +78,18 @@ void PacketSerialiser::append_wstring(const std::wstring &string)
 	((TLVChunk*)(sbuf.data()))->value_length += sizeof(header) + string_bytes;
 }
 
+void PacketSerialiser::append_guid(const GUID &guid)
+{
+	TLVChunk header;
+	header.type = FIELD_TYPE_GUID;
+	header.value_length = sizeof(GUID);
+	
+	sbuf.insert(sbuf.end(), (unsigned char*)(&header), (unsigned char*)(&header + 1));
+	sbuf.insert(sbuf.end(), (unsigned char*)(&guid),   (unsigned char*)(&guid) + sizeof(GUID));
+	
+	((TLVChunk*)(sbuf.data()))->value_length += sizeof(header) + sizeof(GUID);
+}
+
 PacketDeserialiser::PacketDeserialiser(const void *serialised_packet, size_t packet_size)
 {
 	header = (const TLVChunk*)(serialised_packet);
@@ -105,17 +118,17 @@ PacketDeserialiser::PacketDeserialiser(const void *serialised_packet, size_t pac
 	}
 }
 
-uint32_t PacketDeserialiser::packet_type()
+uint32_t PacketDeserialiser::packet_type() const
 {
 	return header->type;
 }
 
-size_t PacketDeserialiser::num_fields()
+size_t PacketDeserialiser::num_fields() const
 {
 	return fields.size();
 }
 
-bool PacketDeserialiser::is_null(size_t index)
+bool PacketDeserialiser::is_null(size_t index) const
 {
 	if(fields.size() <= index)
 	{
@@ -125,7 +138,7 @@ bool PacketDeserialiser::is_null(size_t index)
 	return (fields[index]->type == FIELD_TYPE_NULL);
 }
 
-DWORD PacketDeserialiser::get_dword(size_t index)
+DWORD PacketDeserialiser::get_dword(size_t index) const
 {
 	if(fields.size() <= index)
 	{
@@ -145,7 +158,7 @@ DWORD PacketDeserialiser::get_dword(size_t index)
 	return *(DWORD*)(fields[index]->value);
 }
 
-std::pair<const void*,size_t> PacketDeserialiser::get_data(size_t index)
+std::pair<const void*,size_t> PacketDeserialiser::get_data(size_t index) const
 {
 	if(fields.size() <= index)
 	{
@@ -160,7 +173,7 @@ std::pair<const void*,size_t> PacketDeserialiser::get_data(size_t index)
 	return std::make_pair<const void*, size_t>((const void*)(fields[index]->value), (size_t)(fields[index]->value_length));
 }
 
-std::wstring PacketDeserialiser::get_wstring(size_t index)
+std::wstring PacketDeserialiser::get_wstring(size_t index) const
 {
 	if(fields.size() <= index)
 	{
@@ -178,4 +191,24 @@ std::wstring PacketDeserialiser::get_wstring(size_t index)
 	}
 	
 	return std::wstring((const wchar_t*)(fields[index]->value), (fields[index]->value_length / sizeof(wchar_t)));
+}
+
+GUID PacketDeserialiser::get_guid(size_t index) const
+{
+	if(fields.size() <= index)
+	{
+		throw Error::MissingField();
+	}
+	
+	if(fields[index]->type != FIELD_TYPE_GUID)
+	{
+		throw Error::TypeMismatch();
+	}
+	
+	if(fields[index]->value_length != sizeof(GUID))
+	{
+		throw Error::Malformed();
+	}
+	
+	return *(GUID*)(fields[index]->value);
 }

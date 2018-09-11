@@ -124,6 +124,33 @@ TEST(PacketSerialiser, WString)
 	ASSERT_EQ(got, expect);
 }
 
+TEST(PacketSerialiser, GUID)
+{
+	const GUID guid = { 0x67452301, 0x1A89, 0xDEBC, { 0xF0, 0x12, 0x34, 0x56, 0x78, 0x91, 0xAB, 0xCD } };
+	
+	PacketSerialiser p(0x1234);
+	p.append_guid(guid);
+	
+	std::pair<const void*, size_t> raw = p.raw_packet();
+	
+	const unsigned char EXPECT[] = {
+		0x34, 0x12, 0x00, 0x00,  /* type */
+		0x18, 0x00, 0x00, 0x00,  /* value_length */
+		
+		0x04, 0x00, 0x00, 0x00,  /* type */
+		0x10, 0x00, 0x00, 0x00,  /* value_length */
+		0x01, 0x23, 0x45, 0x67,  /* value */
+		0x89, 0x1A, 0xBC, 0xDE,
+		0xF0, 0x12, 0x34, 0x56,
+		0x78, 0x91, 0xAB, 0xCD,
+	};
+	
+	std::vector<unsigned char> got((unsigned char*)(raw.first), (unsigned char*)(raw.first) + raw.second);
+	std::vector<unsigned char> expect(EXPECT, EXPECT + sizeof(EXPECT));
+	
+	ASSERT_EQ(got, expect);
+}
+
 TEST(PacketSerialiser, NullDWORDDataWString)
 {
 	PacketSerialiser p(0x1234);

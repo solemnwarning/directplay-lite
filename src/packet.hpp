@@ -30,6 +30,7 @@ class PacketSerialiser
 		void append_dword(DWORD value);
 		void append_data(const void *data, size_t size);
 		void append_wstring(const std::wstring &string);
+		void append_guid(const GUID &guid);
 };
 
 class PacketDeserialiser
@@ -53,13 +54,14 @@ class PacketDeserialiser
 		
 		PacketDeserialiser(const void *serialised_packet, size_t packet_size);
 		
-		uint32_t packet_type();
-		size_t num_fields();
+		uint32_t packet_type() const;
+		size_t num_fields() const;
 		
-		bool is_null(size_t index);
-		DWORD get_dword(size_t index);
-		std::pair<const void*,size_t> get_data(size_t index);
-		std::wstring get_wstring(size_t index);
+		bool is_null(size_t index) const;
+		DWORD get_dword(size_t index) const;
+		std::pair<const void*,size_t> get_data(size_t index) const;
+		std::wstring get_wstring(size_t index) const;
+		GUID get_guid(size_t index) const;
 };
 
 class PacketDeserialiser::Error::Incomplete: public Error

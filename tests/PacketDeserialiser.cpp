@@ -57,6 +57,11 @@ TEST_F(PacketDeserialiserEmpty, GetWString)
 	EXPECT_THROW({ pd->get_wstring(0); }, PacketDeserialiser::Error::MissingField);
 }
 
+TEST_F(PacketDeserialiserEmpty, GetGUID)
+{
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::MissingField);
+}
+
 class PacketDeserialiserNull: public PacketDeserialiserTest {
 	protected:
 		virtual void SetUp() override
@@ -105,6 +110,12 @@ TEST_F(PacketDeserialiserNull, GetWString)
 {
 	EXPECT_THROW({ pd->get_wstring(0); }, PacketDeserialiser::Error::TypeMismatch);
 	EXPECT_THROW({ pd->get_wstring(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserNull, GetGUID)
+{
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_guid(1); }, PacketDeserialiser::Error::MissingField);
 }
 
 class PacketDeserialiserDWORD: public PacketDeserialiserTest {
@@ -156,6 +167,12 @@ TEST_F(PacketDeserialiserDWORD, GetWString)
 {
 	EXPECT_THROW({ pd->get_wstring(0); }, PacketDeserialiser::Error::TypeMismatch);
 	EXPECT_THROW({ pd->get_wstring(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserDWORD, GetGUID)
+{
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_guid(1); }, PacketDeserialiser::Error::MissingField);
 }
 
 class PacketDeserialiserData: public PacketDeserialiserTest {
@@ -219,6 +236,12 @@ TEST_F(PacketDeserialiserData, GetWString)
 	EXPECT_THROW({ pd->get_wstring(1); }, PacketDeserialiser::Error::MissingField);
 }
 
+TEST_F(PacketDeserialiserData, GetGUID)
+{
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_guid(1); }, PacketDeserialiser::Error::MissingField);
+}
+
 class PacketDeserialiserWString: public PacketDeserialiserTest {
 	protected:
 		virtual void SetUp() override
@@ -270,6 +293,74 @@ TEST_F(PacketDeserialiserWString, GetWString)
 {
 	EXPECT_NO_THROW({ EXPECT_EQ(pd->get_wstring(0), L"Hello"); });
 	EXPECT_THROW({ pd->get_wstring(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserWString, GetGUID)
+{
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_guid(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+class PacketDeserialiserGUID: public PacketDeserialiserTest {
+	protected:
+		virtual void SetUp() override
+		{
+			static const unsigned char RAW[] = {
+				0x06, 0x00, 0x00, 0x00,  /* type */
+				0x18, 0x00, 0x00, 0x00,  /* value_length */
+				
+				0x04, 0x00, 0x00, 0x00,  /* type */
+				0x10, 0x00, 0x00, 0x00,  /* value_length */
+				0x01, 0x23, 0x45, 0x67,  /* value */
+				0x89, 0x1A, 0xBC, 0xDE,
+				0xF0, 0x12, 0x34, 0x56,
+				0x78, 0x91, 0xAB, 0xCD,
+			};
+			
+			ASSERT_NO_THROW({ pd = new PacketDeserialiser(RAW, sizeof(RAW)); });
+		}
+};
+
+TEST_F(PacketDeserialiserGUID, Type)
+{
+	EXPECT_EQ(pd->packet_type(), (uint32_t)(6));
+}
+
+TEST_F(PacketDeserialiserGUID, NumFields)
+{
+	EXPECT_EQ(pd->num_fields(), (size_t)(1));
+}
+
+TEST_F(PacketDeserialiserGUID, IsNull)
+{
+	EXPECT_NO_THROW({ EXPECT_EQ(pd->is_null(0), false); });
+	EXPECT_THROW({ pd->is_null(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserGUID, GetDWORD)
+{
+	EXPECT_THROW({ pd->get_dword(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_dword(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserGUID, GetData)
+{
+	EXPECT_THROW({ pd->get_data(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_data(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserGUID, GetWString)
+{
+	EXPECT_THROW({ pd->get_wstring(0); }, PacketDeserialiser::Error::TypeMismatch);
+	EXPECT_THROW({ pd->get_wstring(1); }, PacketDeserialiser::Error::MissingField);
+}
+
+TEST_F(PacketDeserialiserGUID, GetGUID)
+{
+	const GUID EXPECT = { 0x67452301, 0x1A89, 0xDEBC, { 0xF0, 0x12, 0x34, 0x56, 0x78, 0x91, 0xAB, 0xCD } };
+	
+	EXPECT_NO_THROW({ EXPECT_EQ(pd->get_guid(0), EXPECT); });
+	EXPECT_THROW({ pd->get_guid(1); }, PacketDeserialiser::Error::MissingField);
 }
 
 class PacketDeserialiserNullDWORDDataWString: public PacketDeserialiserTest {
@@ -555,6 +646,69 @@ TEST(PacketDeserialiser, OneByteWString)
 	
 	ASSERT_NO_THROW({ pd = new PacketDeserialiser(RAW, sizeof(RAW)); });
 	EXPECT_THROW({ pd->get_wstring(0); }, PacketDeserialiser::Error::Malformed);
+	
+	delete pd;
+}
+
+TEST(PacketDeserialiser, ZeroLengthGUID)
+{
+	const unsigned char RAW[] = {
+		0x01, 0x00, 0x00, 0x00,
+		0x08, 0x00, 0x00, 0x00,
+		
+		0x04, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	};
+	
+	PacketDeserialiser *pd = NULL;
+	
+	ASSERT_NO_THROW({ pd = new PacketDeserialiser(RAW, sizeof(RAW)); });
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::Malformed);
+	
+	delete pd;
+}
+
+TEST(PacketDeserialiser, UndersizeGUID)
+{
+	static const unsigned char RAW[] = {
+		0x06, 0x00, 0x00, 0x00,  /* type */
+		0x17, 0x00, 0x00, 0x00,  /* value_length */
+		
+		0x04, 0x00, 0x00, 0x00,  /* type */
+		0x0F, 0x00, 0x00, 0x00,  /* value_length */
+		0x01, 0x23, 0x45, 0x67,  /* value */
+		0x89, 0x1A, 0xBC, 0xDE,
+		0xF0, 0x12, 0x34, 0x56,
+		0x78, 0x91, 0xAB,
+	};
+	
+	PacketDeserialiser *pd = NULL;
+	
+	ASSERT_NO_THROW({ pd = new PacketDeserialiser(RAW, sizeof(RAW)); });
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::Malformed);
+	
+	delete pd;
+}
+
+TEST(PacketDeserialiser, OversizeGUID)
+{
+	static const unsigned char RAW[] = {
+		0x06, 0x00, 0x00, 0x00,  /* type */
+		0x19, 0x00, 0x00, 0x00,  /* value_length */
+		
+		0x04, 0x00, 0x00, 0x00,  /* type */
+		0x11, 0x00, 0x00, 0x00,  /* value_length */
+		0x01, 0x23, 0x45, 0x67,  /* value */
+		0x89, 0x1A, 0xBC, 0xDE,
+		0xF0, 0x12, 0x34, 0x56,
+		0x78, 0x91, 0xAB, 0xCD,
+		0xAA,
+	};
+	
+	PacketDeserialiser *pd = NULL;
+	
+	ASSERT_NO_THROW({ pd = new PacketDeserialiser(RAW, sizeof(RAW)); });
+	EXPECT_THROW({ pd->get_guid(0); }, PacketDeserialiser::Error::Malformed);
 	
 	delete pd;
 }
