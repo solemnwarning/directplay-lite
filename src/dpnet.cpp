@@ -1,3 +1,4 @@
+#include <winsock2.h>
 #include <atomic>
 #include <dplay8.h>
 #include <objbase.h>

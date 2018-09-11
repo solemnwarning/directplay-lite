@@ -1,11 +1,20 @@
 #ifndef DPLITE_DIRECTPLAY8PEER_HPP
 #define DPLITE_DIRECTPLAY8PEER_HPP
 
+#include <winsock2.h>
 #include <atomic>
 #include <dplay8.h>
 #include <map>
+#include <mutex>
 #include <objbase.h>
 #include <stdint.h>
+#include <windows.h>
+
+#include "AsyncHandleAllocator.hpp"
+#include "HostEnumerator.hpp"
+#include "network.hpp"
+#include "packet.hpp"
+#include "SendQueue.hpp"
 
 class DirectPlay8Peer: public IDirectPlay8Peer
 {
@@ -17,10 +26,15 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		PVOID message_handler_ctx;
 		
 		enum {
-			STATE_DISCONNECTED,
+			STATE_NEW,
+			STATE_INITIALISED,
 			STATE_HOSTING,
 			STATE_CONNECTED,
 		} state;
+		
+		AsyncHandleAllocator handle_alloc;
+		
+		std::map<DPNHANDLE, HostEnumerator> host_enums;
 		
 		GUID instance_guid;
 		GUID application_guid;
@@ -33,8 +47,40 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		int listener_socket;   /* TCP listener socket. */
 		int discovery_socket;  /* Discovery UDP sockets, RECIEVES broadcasts only. */
 		
+		unsigned char recv_buf[MAX_PACKET_SIZE];
+		
+		SendQueue udp_sq;
+		SendQueue discovery_sq;
+		
+		HANDLE io_event;
+		std::thread io_thread;
+		std::atomic<bool> io_run;
+		
 		struct Player
 		{
+			enum PlayerState {
+				/* Peer has connected to us, we're waiting for the initial message from it. */
+				PS_INIT,
+				
+				/* We are the host and the peer has sent the initial connect request, we are waiting
+				 * for the application to process DPN_MSGID_INDICATE_CONNECT before we either add the
+				 * player to the session or reject it.
+				*/
+				PS_CONNECTING,
+				
+				/* This is a fully-fledged peer. */
+				PS_CONNECTED,
+				
+				/* This peer is closing down. Discard any future messages received from it, but flush
+				 * anything waiting to be sent and keep the player DPNID valid until after the
+				 * application has processed the DPN_MSGID_DESTROY_PLAYER message and any outstanding
+				 * operations have completed or been cancelled.
+				*/
+				PS_CLOSING,
+			};
+			
+			enum PlayerState state;
+			
 			/* This is the TCP socket to the peer, we may have connected to it, or it
 			 * may have connected to us depending who joined the session first, that
 			 * doesn't really matter.
@@ -42,10 +88,43 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			int sock;
 			
 			uint32_t ip;    /* IPv4 address, network byte order. */
-			uint16_t port;  /* Port, host byte order. */
+			uint16_t port;  /* TCP and UDP port, host byte order. */
+			
+			DPNID id; /* Player ID, not initialised before state PS_CONNECTED. */
+			
+			unsigned char recv_buf[MAX_PACKET_SIZE];
+			size_t recv_buf_cur;
+			
+			SendQueue sq;
+			SendQueue::Buffer *sqb;
+			
+			const unsigned char *send_buf;
+			size_t send_remain;
+			
+			Player(int sock, uint32_t ip, uint16_t port):
+				state(PS_INIT), sock(sock), ip(ip), port(port), recv_buf_cur(0), send_buf(NULL) {}
 		};
 		
-		std::map<DPNID, Player> peers;
+		std::list<Player> peers;
+		std::map<DPNID, std::list<Player>::iterator> other_player_ids;
+		
+		/* Serialises access to:
+		 *
+		 * host_enums
+		 * pending_peers
+		 * peers
+		*/
+		std::mutex lock;
+		
+		void io_main();
+		
+		void io_udp_recv(int sock);
+		void io_udp_send(int sock, SendQueue &q);
+		void io_listener_accept(int sock);
+		bool io_tcp_recv(Player *player);
+		bool io_tcp_send(Player *player);
+		
+		void handle_host_enum_request(const PacketDeserialiser &pd, const struct sockaddr_in *from_addr);
 		
 	public:
 		DirectPlay8Peer(std::atomic<unsigned int> *global_refcount);

@@ -12,6 +12,13 @@ int create_udp_socket(uint32_t ipaddr, uint16_t port)
 		return -1;
 	}
 	
+	u_long non_blocking = 1;
+	if(ioctlsocket(sock, FIONBIO, &non_blocking) != 0)
+	{
+		closesocket(sock);
+		return -1;
+	}
+	
 	BOOL broadcast = TRUE;
 	if(setsockopt(sock, SOL_SOCKET, SO_BROADCAST, (char*)(&broadcast), sizeof(BOOL)) == -1)
 	{
@@ -35,9 +42,16 @@ int create_udp_socket(uint32_t ipaddr, uint16_t port)
 
 int create_listener_socket(uint32_t ipaddr, uint16_t port)
 {
-	int sock = socket(AF_INET, SOCK_DGRAM, 0);
+	int sock = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock == -1)
 	{
+		return -1;
+	}
+	
+	u_long non_blocking = 1;
+	if(ioctlsocket(sock, FIONBIO, &non_blocking) != 0)
+	{
+		closesocket(sock);
 		return -1;
 	}
 	
@@ -66,6 +80,13 @@ int create_discovery_socket()
 	int sock = socket(AF_INET, SOCK_DGRAM, 0);
 	if(sock == -1)
 	{
+		return -1;
+	}
+	
+	u_long non_blocking = 1;
+	if(ioctlsocket(sock, FIONBIO, &non_blocking) != 0)
+	{
+		closesocket(sock);
 		return -1;
 	}
 	
