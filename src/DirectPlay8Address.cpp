@@ -340,7 +340,7 @@ HRESULT DirectPlay8Address::SetDevice(CONST GUID* CONST devGuid)
 	return AddComponent(DPNA_KEY_DEVICE, devGuid, sizeof(*devGuid), DPNA_DATATYPE_GUID);
 }
 
-HRESULT DirectPlay8Address::BuildFromDirectPlay4Address(LPVOID pvAddress, DWORD dwDataSize)
+HRESULT DirectPlay8Address::BuildFromDPADDRESS(LPVOID pvAddress, DWORD dwDataSize)
 {
 	UNIMPLEMENTED("DirectPlay8Address::BuildFromDirectPlay4Address");
 }

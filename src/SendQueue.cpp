@@ -74,5 +74,5 @@ std::pair<const void*, size_t> SendQueue::Buffer::get_data()
 
 std::pair<const struct sockaddr*, int> SendQueue::Buffer::get_dest_addr()
 {
-	return std::make_pair<const struct sockaddr*, int>((struct sockaddr*)(&dest_addr), (int)(dest_addr_len));
+	return std::make_pair((struct sockaddr*)(&dest_addr), (int)(dest_addr_len));
 }

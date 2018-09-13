@@ -170,7 +170,7 @@ std::pair<const void*,size_t> PacketDeserialiser::get_data(size_t index) const
 		throw Error::TypeMismatch();
 	}
 	
-	return std::make_pair<const void*, size_t>((const void*)(fields[index]->value), (size_t)(fields[index]->value_length));
+	return std::make_pair((const void*)(fields[index]->value), (size_t)(fields[index]->value_length));
 }
 
 std::wstring PacketDeserialiser::get_wstring(size_t index) const

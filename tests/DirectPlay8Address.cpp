@@ -685,7 +685,7 @@ class DirectPlay8AddressSetUserData: public DirectPlay8AddressInitial
 {
 	protected:
 		const unsigned char REFDATA[22] = { 0x00, 0x01, 0x02, 0x03, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 0xFF, 0xFE };
-		const DWORD         REFSIZE     = 22;
+		static const DWORD  REFSIZE     = 22;
 		
 		virtual void SetUp() override
 		{
