@@ -5,6 +5,8 @@
 
 #include "../src/DirectPlay8Peer.hpp"
 
+// #define INSTANTIATE_FROM_COM
+
 static const GUID APP_GUID_1 = { 0xa6133957, 0x6f42, 0x46ce, { 0xa9, 0x88, 0x22, 0xf7, 0x79, 0x47, 0x08, 0x16 } };
 static const GUID APP_GUID_2 = { 0x5917faae, 0x7ab0, 0x42d2, { 0xae, 0x13, 0x9c, 0x54, 0x1b, 0x7f, 0xb5, 0xab } };
 
@@ -14,11 +16,47 @@ static HRESULT CALLBACK callback_shim(PVOID pvUserContext, DWORD dwMessageType, 
 	return (*callback)(dwMessageType, pMessage);
 }
 
+class IDP8PeerInstance
+{
+	public:
+		IDirectPlay8Peer *instance;
+		
+		IDP8PeerInstance()
+		{
+			#ifdef INSTANTIATE_FROM_COM
+			CoInitialize(NULL);
+			CoCreateInstance(CLSID_DirectPlay8Peer, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Peer, (void**)(&instance));
+			#else
+			instance = new DirectPlay8Peer(NULL);
+			#endif
+		}
+		
+		~IDP8PeerInstance()
+		{
+			#ifdef INSTANTIATE_FROM_COM
+			instance->Release();
+			CoUninitialize();
+			#else
+			instance->Release();
+			#endif
+		}
+		
+		IDirectPlay8Peer &operator*()
+		{
+			return *instance;
+		}
+		
+		IDirectPlay8Peer *operator->()
+		{
+			return instance;
+		}
+};
+
 /* Wrapper around a DirectPlay8Peer which hosts a session. */
 struct SessionHost
 {
-	DirectPlay8Peer dp8p;
 	std::function<HRESULT(DWORD,PVOID)> cb;
+	IDP8PeerInstance dp8p;
 	
 	SessionHost(
 		GUID application_guid,
@@ -28,10 +66,9 @@ struct SessionHost
 			{
 				return DPN_OK;
 			}):
-		dp8p(NULL),
 		cb(cb)
 	{
-		if(dp8p.Initialize(&(this->cb), &callback_shim, 0) != S_OK)
+		if(dp8p->Initialize(&(this->cb), &callback_shim, 0) != S_OK)
 		{
 			throw std::runtime_error("DirectPlay8Peer::Initialize failed");
 		}
@@ -44,7 +81,7 @@ struct SessionHost
 			app_desc.guidApplication = application_guid;
 			app_desc.pwszSessionName = (wchar_t*)(session_description);
 			
-			if(dp8p.Host(&app_desc, NULL, 0, NULL, NULL, NULL, 0) != S_OK)
+			if(dp8p->Host(&app_desc, NULL, 0, NULL, NULL, NULL, 0) != S_OK)
 			{
 				throw std::runtime_error("DirectPlay8Peer::Host failed");
 			}
@@ -160,13 +197,13 @@ TEST(DirectPlay8Peer, EnumHostsSync)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&client_cb, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
 	DWORD start = GetTickCount();
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -245,13 +282,13 @@ TEST(DirectPlay8Peer, EnumHostsAsync)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&callback, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
 	DWORD start = GetTickCount();
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -314,13 +351,13 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelByHandle)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&callback, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
 	DWORD start = GetTickCount();
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -334,7 +371,7 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelByHandle)
 		0                  /* dwFlags */
 	), DPNSUCCESS_PENDING);
 	
-	ASSERT_EQ(client.CancelAsyncOperation(async_handle, 0), S_OK);
+	ASSERT_EQ(client->CancelAsyncOperation(async_handle, 0), S_OK);
 	
 	Sleep(500);
 	
@@ -377,13 +414,13 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelAllEnums)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&callback, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
 	DWORD start = GetTickCount();
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -397,7 +434,7 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelAllEnums)
 		0                  /* dwFlags */
 	), DPNSUCCESS_PENDING);
 	
-	ASSERT_EQ(client.CancelAsyncOperation(0, DPNCANCEL_ENUM), S_OK);
+	ASSERT_EQ(client->CancelAsyncOperation(0, DPNCANCEL_ENUM), S_OK);
 	
 	Sleep(500);
 	
@@ -440,13 +477,13 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelAllOperations)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&callback, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
 	DWORD start = GetTickCount();
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -460,7 +497,7 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelAllOperations)
 		0                  /* dwFlags */
 	), DPNSUCCESS_PENDING);
 	
-	ASSERT_EQ(client.CancelAsyncOperation(0, DPNCANCEL_ALL_OPERATIONS), S_OK);
+	ASSERT_EQ(client->CancelAsyncOperation(0, DPNCANCEL_ALL_OPERATIONS), S_OK);
 	
 	Sleep(500);
 	
@@ -503,13 +540,13 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelByClose)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&callback, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
 	DWORD start = GetTickCount();
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -523,7 +560,7 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelByClose)
 		0                  /* dwFlags */
 	), DPNSUCCESS_PENDING);
 	
-	ASSERT_EQ(client.Close(0), S_OK);
+	ASSERT_EQ(client->Close(0), S_OK);
 	
 	EXPECT_TRUE(got_async_op_complete);
 	
@@ -610,9 +647,9 @@ TEST(DirectPlay8Peer, EnumHostsFilterByApplicationGUID)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&client_cb, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
 	DPN_APPLICATION_DESC app_desc;
 	memset(&app_desc, 0, sizeof(app_desc));
@@ -620,7 +657,7 @@ TEST(DirectPlay8Peer, EnumHostsFilterByApplicationGUID)
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_2;
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		&app_desc,         /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -673,9 +710,9 @@ TEST(DirectPlay8Peer, EnumHostsFilterByNULLApplicationGUID)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&client_cb, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
 	DPN_APPLICATION_DESC app_desc;
 	memset(&app_desc, 0, sizeof(app_desc));
@@ -683,7 +720,7 @@ TEST(DirectPlay8Peer, EnumHostsFilterByNULLApplicationGUID)
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = GUID_NULL;
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		&app_desc,         /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -761,11 +798,11 @@ TEST(DirectPlay8Peer, EnumHostsDataInQuery)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&client_cb, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
@@ -858,11 +895,11 @@ TEST(DirectPlay8Peer, EnumHostsDataInResponse)
 		return DPN_OK;
 	};
 	
-	DirectPlay8Peer client(NULL);
+	IDP8PeerInstance client;
 	
-	ASSERT_EQ(client.Initialize(&client_cb, &callback_shim, 0), S_OK);
+	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
-	ASSERT_EQ(client.EnumHosts(
+	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
 		NULL,              /* pdpaddrDeviceInfo */
