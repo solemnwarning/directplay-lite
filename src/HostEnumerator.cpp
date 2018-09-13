@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 #include <ws2tcpip.h>
 
@@ -31,10 +32,12 @@ HostEnumerator::HostEnumerator(
 	message_handler_ctx(message_handler_ctx),
 	complete_cb(complete_cb),
 	user_context(pvUserContext),
+	next_tx_at(0),
 	req_cancel(false)
 {
 	/* TODO: Use address in pdpaddrHost, if provided. */
 	
+	memset(&send_addr, 0, sizeof(send_addr));
 	send_addr.sin_family      = AF_INET;
 	send_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 	send_addr.sin_port        = htons(DISCOVERY_PORT);
@@ -246,7 +249,6 @@ void HostEnumerator::handle_packet(const void *data, size_t size, struct sockadd
 	*/
 	
 	IDirectPlay8Address *sender_address = new DirectPlay8Address(global_refcount);
-	sender_address->AddRef();
 	sender_address->SetSP(&CLSID_DP8SP_TCPIP); /* TODO: Be IPX if application previously gave us an IPX address? */
 	
 	char from_addr_ip_s[16];
@@ -266,7 +268,6 @@ void HostEnumerator::handle_packet(const void *data, size_t size, struct sockadd
 	*/
 	
 	IDirectPlay8Address *device_address = new DirectPlay8Address(global_refcount);
-	device_address->AddRef();
 	device_address->SetSP(&CLSID_DP8SP_TCPIP); /* TODO: Be IPX if application previously gave us an IPX address? */
 	
 	DPNMSG_ENUM_HOSTS_RESPONSE message;

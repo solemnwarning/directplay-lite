@@ -535,7 +535,23 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 		Sleep(50);
 	}
 	
-	/* TODO: Clean sockets etc up. */
+	if(discovery_socket != -1)
+	{
+		closesocket(discovery_socket);
+		discovery_socket = -1;
+	}
+	
+	if(listener_socket != -1)
+	{
+		closesocket(listener_socket);
+		listener_socket = -1;
+	}
+	
+	if(udp_socket != -1)
+	{
+		closesocket(udp_socket);
+		udp_socket = -1;
+	}
 	
 	WSACleanup();
 	
