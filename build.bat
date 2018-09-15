@@ -13,12 +13,14 @@ SET CPP_OBJS=^
  src/COMAPIException.obj^
  src/DirectPlay8Address.obj^
  src/DirectPlay8Peer.obj^
+ src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
  src/network.obj^
  src/packet.obj^
  src/SendQueue.obj^
  tests/DirectPlay8Address.obj^
  tests/DirectPlay8Peer.obj^
+ tests/HandleHandlingPool.obj^
  tests/PacketDeserialiser.obj^
  tests/PacketSerialiser.obj
 
@@ -30,12 +32,14 @@ SET TEST_OBJS=^
  src/COMAPIException.obj^
  src/DirectPlay8Address.obj^
  src/DirectPlay8Peer.obj^
+ src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
  src/network.obj^
  src/packet.obj^
  src/SendQueue.obj^
  tests/DirectPlay8Address.obj^
  tests/DirectPlay8Peer.obj^
+ tests/HandleHandlingPool.obj^
  tests/PacketDeserialiser.obj^
  tests/PacketSerialiser.obj
 
