@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <utility>
 #include <vector>
+#include <windows.h>
 
 class SendQueue
 {
@@ -45,8 +46,10 @@ class SendQueue
 		
 		Buffer *current;
 		
+		HANDLE signal_on_queue;
+		
 	public:
-		SendQueue(): current(NULL) {}
+		SendQueue(HANDLE signal_on_queue): current(NULL), signal_on_queue(signal_on_queue) {}
 		
 		/* No copy c'tor. */
 		SendQueue(const SendQueue &src) = delete;

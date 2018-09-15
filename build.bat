@@ -13,6 +13,7 @@ SET CPP_OBJS=^
  src/COMAPIException.obj^
  src/DirectPlay8Address.obj^
  src/DirectPlay8Peer.obj^
+ src/EventObject.obj^
  src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
  src/network.obj^
@@ -32,6 +33,7 @@ SET TEST_OBJS=^
  src/COMAPIException.obj^
  src/DirectPlay8Address.obj^
  src/DirectPlay8Peer.obj^
+ src/EventObject.obj^
  src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
  src/network.obj^

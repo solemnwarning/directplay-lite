@@ -1,4 +1,6 @@
 #include <assert.h>
+#include <winsock2.h>
+#include <windows.h>
 
 #include "SendQueue.hpp"
 
@@ -18,6 +20,8 @@ void SendQueue::send(SendPriority priority, Buffer *buffer)
 			high_queue.push_back(buffer);
 			break;
 	}
+	
+	SetEvent(signal_on_queue);
 }
 
 SendQueue::Buffer *SendQueue::get_next()

@@ -20,19 +20,21 @@
 	fprintf(stderr, "Unimplemented method: " fmt "\n", ## __VA_ARGS__); \
 	return E_NOTIMPL;
 
+#define THREADS_PER_POOL     4
+#define MAX_HANDLES_PER_POOL 16
+
 DirectPlay8Peer::DirectPlay8Peer(std::atomic<unsigned int> *global_refcount):
 	global_refcount(global_refcount),
 	local_refcount(0),
 	state(STATE_NEW),
 	udp_socket(-1),
 	listener_socket(-1),
-	discovery_socket(-1)
+	discovery_socket(-1),
+	worker_pool(THREADS_PER_POOL, MAX_HANDLES_PER_POOL),
+	udp_sq(udp_socket_event)
 {
-	io_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-	if(io_event == NULL)
-	{
-		throw std::runtime_error("Cannot create event object");
-	}
+	worker_pool.add_handle(udp_socket_event,   [this]() { handle_udp_socket_event();   });
+	worker_pool.add_handle(other_socket_event, [this]() { handle_other_socket_event(); });
 	
 	AddRef();
 }
@@ -44,7 +46,8 @@ DirectPlay8Peer::~DirectPlay8Peer()
 		Close(0);
 	}
 	
-	CloseHandle(io_event);
+	worker_pool.remove_handle(other_socket_event);
+	worker_pool.remove_handle(udp_socket_event);
 }
 
 HRESULT DirectPlay8Peer::QueryInterface(REFIID riid, void **ppvObject)
@@ -321,8 +324,8 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 		}
 	}
 	
-	if(WSAEventSelect(udp_socket, io_event, FD_READ | FD_WRITE) != 0
-		|| WSAEventSelect(listener_socket, io_event, FD_ACCEPT) != 0)
+	if(WSAEventSelect(udp_socket, udp_socket_event, FD_READ | FD_WRITE) != 0
+		|| WSAEventSelect(listener_socket, other_socket_event, FD_ACCEPT) != 0)
 	{
 		return DPNERR_GENERIC;
 	}
@@ -332,14 +335,11 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 		discovery_socket = create_discovery_socket();
 		
 		if(discovery_socket == -1
-			|| WSAEventSelect(discovery_socket, io_event, FD_READ) != 0)
+			|| WSAEventSelect(discovery_socket, other_socket_event, FD_READ) != 0)
 		{
 			return DPNERR_GENERIC;
 		}
 	}
-	
-	io_run    = true;
-	io_thread = std::thread(&DirectPlay8Peer::io_main, this);
 	
 	state = STATE_HOSTING;
 	
@@ -512,14 +512,6 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 		return DPNERR_UNINITIALIZED;
 	}
 	
-	if(state == STATE_HOSTING || state == STATE_CONNECTED)
-	{
-		io_run = false;
-		SetEvent(io_event);
-		
-		io_thread.join();
-	}
-	
 	CancelAsyncOperation(0, DPNCANCEL_ALL_OPERATIONS);
 	
 	/* TODO: Wait properly. */
@@ -688,80 +680,93 @@ HRESULT DirectPlay8Peer::TerminateSession(void* CONST pvTerminateData, CONST DWO
 	UNIMPLEMENTED("DirectPlay8Peer::TerminateSession");
 }
 
-void DirectPlay8Peer::io_main()
-{
-	while(io_run)
-	{
-		WaitForSingleObject(io_event, INFINITE);
-		
-		io_udp_recv(udp_socket);
-		io_udp_send(udp_socket, udp_sq);
-		
-		if(discovery_socket != -1)
-		{
-			io_udp_recv(discovery_socket);
-			io_udp_send(discovery_socket, discovery_sq);
-		}
-		
-		io_listener_accept(listener_socket);
-		
-		std::unique_lock<std::mutex> l(lock);
-		
-		for(auto p = peers.begin(); p != peers.end();)
-		{
-			auto next_p = std::next(p);
-			
-			if(!io_tcp_recv(&*p) || !io_tcp_send(&*p))
-			{
-				/* TODO: Complete outstanding sends (failed), drop player */
-				closesocket(p->sock);
-				peers.erase(p);
-			}
-			
-			p = next_p;
-		}
-	}
-}
-
-void DirectPlay8Peer::io_udp_recv(int sock)
+void DirectPlay8Peer::handle_udp_socket_event()
 {
 	struct sockaddr_in from_addr;
 	int fa_len = sizeof(from_addr);
 	
-	int r = recvfrom(sock, (char*)(recv_buf), sizeof(recv_buf), 0, (struct sockaddr*)(&from_addr), &fa_len);
-	if(r <= 0)
-	{
-		return;
-	}
+	unsigned char recv_buf[MAX_PACKET_SIZE];
 	
-	/* Process message */
-	std::unique_ptr<PacketDeserialiser> pd;
-	
-	try {
-		pd.reset(new PacketDeserialiser(recv_buf, r));
-	}
-	catch(const PacketDeserialiser::Error &e)
+	int r = recvfrom(udp_socket, (char*)(recv_buf), sizeof(recv_buf), 0, (struct sockaddr*)(&from_addr), &fa_len);
+	if(r > 0)
 	{
-		/* Malformed packet received */
-		return;
-	}
-	
-	switch(pd->packet_type())
-	{
-		case DPLITE_MSGID_HOST_ENUM_REQUEST:
+		/* Process message */
+		std::unique_ptr<PacketDeserialiser> pd;
+		
+		try {
+			pd.reset(new PacketDeserialiser(recv_buf, r));
+		}
+		catch(const PacketDeserialiser::Error &e)
 		{
-			if(state == STATE_HOSTING)
-			{
-				handle_host_enum_request(*pd, &from_addr);
-			}
-			
-			break;
+			/* Malformed packet received */
+			return;
 		}
 		
-		default:
-			/* TODO: Log "unrecognised packet type" */
-			break;
+		switch(pd->packet_type())
+		{
+			case DPLITE_MSGID_HOST_ENUM_REQUEST:
+			{
+				if(state == STATE_HOSTING)
+				{
+					handle_host_enum_request(*pd, &from_addr);
+				}
+				
+				break;
+			}
+			
+			default:
+				/* TODO: Log "unrecognised packet type" */
+				break;
+		}
 	}
+	
+	io_udp_send(udp_socket, udp_sq);
+}
+
+void DirectPlay8Peer::handle_other_socket_event()
+{
+	if(discovery_socket != -1)
+	{
+		struct sockaddr_in from_addr;
+		int fa_len = sizeof(from_addr);
+		
+		unsigned char recv_buf[MAX_PACKET_SIZE];
+		
+		int r = recvfrom(discovery_socket, (char*)(recv_buf), sizeof(recv_buf), 0, (struct sockaddr*)(&from_addr), &fa_len);
+		if(r > 0)
+		{
+			/* Process message */
+			std::unique_ptr<PacketDeserialiser> pd;
+			
+			try {
+				pd.reset(new PacketDeserialiser(recv_buf, r));
+			}
+			catch(const PacketDeserialiser::Error &e)
+			{
+				/* Malformed packet received */
+				return;
+			}
+			
+			switch(pd->packet_type())
+			{
+				case DPLITE_MSGID_HOST_ENUM_REQUEST:
+				{
+					if(state == STATE_HOSTING)
+					{
+						handle_host_enum_request(*pd, &from_addr);
+					}
+					
+					break;
+				}
+				
+				default:
+					/* TODO: Log "unrecognised packet type" */
+					break;
+			}
+		}
+	}
+	
+	io_listener_accept(listener_socket);
 }
 
 void DirectPlay8Peer::io_udp_send(int sock, SendQueue &sq)

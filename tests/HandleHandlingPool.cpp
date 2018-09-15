@@ -4,31 +4,8 @@
 #include <vector>
 #include <windows.h>
 
+#include "../src/EventObject.hpp"
 #include "../src/HandleHandlingPool.hpp"
-
-struct EventObject
-{
-	HANDLE handle;
-	
-	EventObject(BOOL bManualReset = FALSE, BOOL bInitialState = FALSE)
-	{
-		handle = CreateEvent(NULL, bManualReset, bInitialState, NULL);
-		if(handle == NULL)
-		{
-			throw std::runtime_error("Unable to create event object");
-		}
-	}
-	
-	~EventObject()
-	{
-		CloseHandle(handle);
-	}
-	
-	operator HANDLE() const
-	{
-		return handle;
-	}
-};
 
 TEST(HandleHandlingPool, SingleThreadBasic)
 {

@@ -11,6 +11,8 @@
 #include <windows.h>
 
 #include "AsyncHandleAllocator.hpp"
+#include "EventObject.hpp"
+#include "HandleHandlingPool.hpp"
 #include "HostEnumerator.hpp"
 #include "network.hpp"
 #include "packet.hpp"
@@ -47,14 +49,12 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		int listener_socket;   /* TCP listener socket. */
 		int discovery_socket;  /* Discovery UDP sockets, RECIEVES broadcasts only. */
 		
-		unsigned char recv_buf[MAX_PACKET_SIZE];
+		EventObject udp_socket_event;
+		EventObject other_socket_event;
+		
+		HandleHandlingPool worker_pool;
 		
 		SendQueue udp_sq;
-		SendQueue discovery_sq;
-		
-		HANDLE io_event;
-		std::thread io_thread;
-		std::atomic<bool> io_run;
 		
 		struct Player
 		{
@@ -95,6 +95,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			unsigned char recv_buf[MAX_PACKET_SIZE];
 			size_t recv_buf_cur;
 			
+			EventObject event;
+			
 			SendQueue sq;
 			SendQueue::Buffer *sqb;
 			
@@ -102,7 +104,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			size_t send_remain;
 			
 			Player(int sock, uint32_t ip, uint16_t port):
-				state(PS_INIT), sock(sock), ip(ip), port(port), recv_buf_cur(0), send_buf(NULL) {}
+				state(PS_INIT), sock(sock), ip(ip), port(port), recv_buf_cur(0), sq(event), send_buf(NULL) {}
 		};
 		
 		std::list<Player> peers;
@@ -118,7 +120,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		
 		void io_main();
 		
-		void io_udp_recv(int sock);
+		void handle_udp_socket_event();
+		void handle_other_socket_event();
+		
 		void io_udp_send(int sock, SendQueue &q);
 		void io_listener_accept(int sock);
 		bool io_tcp_recv(Player *player);
