@@ -24,7 +24,7 @@ class PacketSerialiser
 	public:
 		PacketSerialiser(uint32_t type);
 		
-		std::pair<const void*, size_t> raw_packet();
+		std::pair<const void*, size_t> raw_packet() const;
 		
 		void append_null();
 		void append_dword(DWORD value);

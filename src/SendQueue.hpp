@@ -3,12 +3,16 @@
 
 #include <winsock2.h>
 
+#include <functional>
 #include <list>
+#include <mutex>
 #include <set>
 #include <stdlib.h>
 #include <utility>
 #include <vector>
 #include <windows.h>
+
+#include "packet.hpp"
 
 class SendQueue
 {
@@ -19,32 +23,38 @@ class SendQueue
 			SEND_PRI_HIGH = 4,
 		};
 		
-		class Buffer {
+		class SendOp
+		{
 			private:
 				std::vector<unsigned char> data;
+				size_t sent_data;
 				
 				struct sockaddr_storage dest_addr;
-				int dest_addr_len;
+				size_t dest_addr_size;
 				
-			protected:
-				Buffer(const void *data, size_t data_size, const struct sockaddr *dest_addr = NULL, int dest_addr_len = 0);
+				std::function<void(std::unique_lock<std::mutex>&, HRESULT)> callback;
 				
 			public:
-				virtual ~Buffer();
+				SendOp(
+					const void *data, size_t data_size,
+					const struct sockaddr *dest_addr, size_t dest_addr_size,
+					const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
 				
-				std::pair<const void*, size_t> get_data();
+				std::pair<const void*, size_t> get_data() const;
+				std::pair<const struct sockaddr*, size_t> get_dest_addr() const;
 				
-				std::pair<const struct sockaddr*, int> get_dest_addr();
+				void inc_sent_data(size_t sent);
+				std::pair<const void*, size_t> get_pending_data() const;
 				
-				virtual void complete(HRESULT result) = 0;
+				void invoke_callback(std::unique_lock<std::mutex> &l, HRESULT result) const;
 		};
 		
 	private:
-		std::list<Buffer*> low_queue;
-		std::list<Buffer*> medium_queue;
-		std::list<Buffer*> high_queue;
+		std::list<SendOp*> low_queue;
+		std::list<SendOp*> medium_queue;
+		std::list<SendOp*> high_queue;
 		
-		Buffer *current;
+		SendOp *current;
 		
 		HANDLE signal_on_queue;
 		
@@ -54,10 +64,10 @@ class SendQueue
 		/* No copy c'tor. */
 		SendQueue(const SendQueue &src) = delete;
 		
-		void send(SendPriority priority, Buffer *buffer);
+		void send(SendPriority priority, const PacketSerialiser &ps, const struct sockaddr_in *dest_addr, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
 		
-		Buffer *get_next();
-		void complete(Buffer *buffer, HRESULT result);
+		SendOp *get_pending();
+		void pop_pending(SendOp *op);
 };
 
 #endif /* !DPLITE_SENDQUEUE_HPP */

@@ -10,6 +10,7 @@
 
 int create_udp_socket(uint32_t ipaddr, uint16_t port);
 int create_listener_socket(uint32_t ipaddr, uint16_t port);
+int create_client_socket(uint32_t local_ipaddr, uint16_t local_port);
 int create_discovery_socket();
 
 #endif /* !DPLITE_NETWORK_HPP */

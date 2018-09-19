@@ -7,6 +7,9 @@
 class EventObject
 {
 	private:
+		/* No copy c'tor. */
+		EventObject(const EventObject&) = delete;
+		
 		HANDLE handle;
 	
 	public:

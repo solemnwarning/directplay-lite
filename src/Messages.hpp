@@ -26,4 +26,40 @@
  * DWORD       - Tick count from DPLITE_MSGID_HOST_ENUM_REQUEST
 */
 
+#define DPLITE_MSGID_CONNECT_HOST 3
+
+/* Initial Connect() request to host.
+ *
+ * GUID | NULL    - Instance GUID
+ * GUID           - Application GUID
+ * WSTRING | NULL - Password
+ * DATA | NULL    - Request data
+*/
+
+#define DPLITE_MSGID_CONNECT_HOST_OK 4
+
+/* Successful response to DPLITE_MSGID_CONNECT_HOST from host.
+ *
+ * GUID        - Instance GUID
+ * DWORD       - Player ID of current host
+ * DWORD       - Player ID assigned to receiving client
+ * DWORD       - Number of other peers (total - 2)
+ *
+ * For each peer:
+ *   DWORD - Player ID
+ *   DWORD - IPv4 address (network byte order)
+ *   DWORD - Port (host byte order)
+ *
+ * DATA | NULL - Response data
+*/
+
+#define DPLITE_MSGID_CONNECT_HOST_FAIL 5
+
+/* Negative response to DPLITE_MSGID_CONNECT_HOST from host.
+ * Host will close the connection after sending this.
+ *
+ * DWORD       - Error code (DPNERR_HOSTREJECTEDCONNECTION, DPNERR_INVALIDAPPLICATION, etc)
+ * DATA | NULL - Response data
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */

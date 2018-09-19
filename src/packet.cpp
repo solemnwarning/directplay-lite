@@ -24,7 +24,7 @@ PacketSerialiser::PacketSerialiser(uint32_t type)
 	sbuf.insert(sbuf.begin(), (unsigned char*)(&header), (unsigned char*)(&header + 1));
 }
 
-std::pair<const void*, size_t> PacketSerialiser::raw_packet()
+std::pair<const void*, size_t> PacketSerialiser::raw_packet() const
 {
 	return std::make_pair<const void*, size_t>(sbuf.data(), sbuf.size());
 }

@@ -7,7 +7,7 @@
 #include "../src/DirectPlay8Address.hpp"
 #include "../src/DirectPlay8Peer.hpp"
 
-#define INSTANTIATE_FROM_COM
+// #define INSTANTIATE_FROM_COM
 
 #define PORT 42895
 
@@ -1078,6 +1078,8 @@ TEST(DirectPlay8Peer, ConnectSync)
 						EXPECT_EQ(ic->pvPlayerContext, (void*)(NULL));
 						
 						/* TODO: Check pAddressPlayer, pAddressDevice */
+						
+						ic->pvPlayerContext = (void*)(0xB441);
 					}
 					
 					break;
@@ -1091,7 +1093,7 @@ TEST(DirectPlay8Peer, ConnectSync)
 						p1_player_id = cp->dpnidPlayer;
 						
 						EXPECT_EQ(cp->dwSize,          sizeof(DPNMSG_CREATE_PLAYER));
-						EXPECT_EQ(cp->pvPlayerContext, (void*)(0));
+						EXPECT_EQ(cp->pvPlayerContext, (void*)(0xB441));
 						
 						cp->pvPlayerContext = (void*)(0xFEED);
 					}
@@ -1349,6 +1351,8 @@ TEST(DirectPlay8Peer, ConnectAsync)
 						EXPECT_EQ(ic->pvPlayerContext, (void*)(NULL));
 						
 						/* TODO: Check pAddressPlayer, pAddressDevice */
+						
+						ic->pvPlayerContext = (void*)(0xB441);
 					}
 					
 					break;
@@ -1362,7 +1366,7 @@ TEST(DirectPlay8Peer, ConnectAsync)
 						p1_player_id = cp->dpnidPlayer;
 						
 						EXPECT_EQ(cp->dwSize,          sizeof(DPNMSG_CREATE_PLAYER));
-						EXPECT_EQ(cp->pvPlayerContext, (void*)(0));
+						EXPECT_EQ(cp->pvPlayerContext, (void*)(0xB441));
 						
 						cp->pvPlayerContext = (void*)(0xFEED);
 					}
