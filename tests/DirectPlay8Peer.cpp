@@ -7,7 +7,7 @@
 #include "../src/DirectPlay8Address.hpp"
 #include "../src/DirectPlay8Peer.hpp"
 
-#define INSTANTIATE_FROM_COM
+// #define INSTANTIATE_FROM_COM
 
 #define PORT 42895
 

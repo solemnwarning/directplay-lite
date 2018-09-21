@@ -62,4 +62,13 @@
  * DATA | NULL - Response data
 */
 
+#define DPLITE_MSGID_MESSAGE 6
+
+/* Message sent via SendTo() by application.
+ *
+ * DWORD - Player ID of sender
+ * DATA  - Message payload
+ * DWORD - Flags (DPNSEND_GUARANTEED, DPNSEND_COALESCE, DPNSEND_COMPLETEONPROCESS)
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */
