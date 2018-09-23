@@ -78,7 +78,7 @@ template<typename T, const IID &IMPLEMENTS> class Factory: public IClassFactory
 			}
 		}
 		
-		virtual HRESULT STDMETHODCALLTYPE LockServer(WINBOOL) override
+		virtual HRESULT STDMETHODCALLTYPE LockServer(BOOL) override
 		{
 			return S_OK;
 		}
