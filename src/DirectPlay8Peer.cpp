@@ -755,12 +755,146 @@ HRESULT DirectPlay8Peer::EnumGroupMembers(CONST DPNID dpnid, DPNID* CONST prgdpn
 
 HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo, PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::SetPeerInfo(%p, %p, %p, %u)", pdpnPlayerInfo, pvAsyncContext, phAsyncHandle, (unsigned)(dwFlags));
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(pdpnPlayerInfo->dwSize != sizeof(DPN_PLAYER_INFO))
+	{
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	if(pdpnPlayerInfo->dwInfoFlags & DPNINFO_NAME)
+	{
+		if(pdpnPlayerInfo->pwszName == NULL)
+		{
+			local_player_name.clear();
+		}
+		else{
+			local_player_name = pdpnPlayerInfo->pwszName;
+		}
+	}
+	
+	if(pdpnPlayerInfo->dwInfoFlags & DPNINFO_DATA)
+	{
+		local_player_data.clear();
+		
+		if(pdpnPlayerInfo->pvData != NULL && pdpnPlayerInfo->dwDataSize > 0)
+		{
+			local_player_data.reserve(pdpnPlayerInfo->dwDataSize);
+			local_player_data.insert(
+				local_player_data.end(),
+				(const unsigned char*)(pdpnPlayerInfo->pvData),
+				(const unsigned char*)(pdpnPlayerInfo->pvData) + pdpnPlayerInfo->dwDataSize);
+		}
+	}
+	
+	/* TODO: Send update to peers. */
+	
+	if(dwFlags & DPNSETPEERINFO_SYNC)
+	{
+		return S_OK;
+	}
+	else{
+		DPNHANDLE handle = handle_alloc.new_pinfo();
+		
+		if(phAsyncHandle != NULL)
+		{
+			*phAsyncHandle = handle;
+		}
+		
+		DPNMSG_ASYNC_OP_COMPLETE oc;
+		memset(&oc, 0, sizeof(oc));
+		
+		oc.dwSize        = sizeof(oc);
+		oc.hAsyncOp      = handle;
+		oc.pvUserContext = pvAsyncContext;
+		oc.hResultCode   = S_OK;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
+		
+		return DPNSUCCESS_PENDING;
+	}
 }
 
 HRESULT DirectPlay8Peer::GetPeerInfo(CONST DPNID dpnid, DPN_PLAYER_INFO* CONST pdpnPlayerInfo, DWORD* CONST pdwSize, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::GetPeerInfo");
+	std::unique_lock<std::mutex> l(lock);
+	
+	std::wstring *name;
+	std::vector<unsigned char> *data;
+	
+	if(dpnid == local_player_id)
+	{
+		name = &local_player_name;
+		data = &local_player_data;
+	}
+	else{
+		Peer *peer = get_peer_by_player_id(dpnid);
+		if(peer == NULL)
+		{
+			return DPNERR_INVALIDPLAYER;
+		}
+		
+		UNIMPLEMENTED("DirectPlay8Peer::GetPeerInfo");
+		return DPNERR_GENERIC;
+	}
+	
+	size_t needed_buf_size = sizeof(DPN_PLAYER_INFO) + data->size() + ((name->length() + !name->empty()) * sizeof(wchar_t));
+	
+	if(pdpnPlayerInfo != NULL && *pdwSize >= sizeof(DPN_PLAYER_INFO) && pdpnPlayerInfo->dwSize != sizeof(DPN_PLAYER_INFO))
+	{
+		return DPNERR_INVALIDFLAGS;
+	}
+	
+	if(pdpnPlayerInfo == NULL || *pdwSize < needed_buf_size)
+	{
+		*pdwSize = needed_buf_size;
+		return DPNERR_BUFFERTOOSMALL;
+	}
+	
+	unsigned char *data_out_ptr = (unsigned char*)(pdpnPlayerInfo + 1);
+	
+	pdpnPlayerInfo->dwInfoFlags   = DPNINFO_NAME | DPNINFO_DATA;
+	pdpnPlayerInfo->dwPlayerFlags = 0;
+	
+	if(!name->empty())
+	{
+		size_t ws_size = (name->length() + 1) * sizeof(wchar_t);
+		memcpy(data_out_ptr, name->c_str(), ws_size);
+		
+		pdpnPlayerInfo->pwszName = (wchar_t*)(data_out_ptr);
+		
+		data_out_ptr += ws_size;
+	}
+	else{
+		pdpnPlayerInfo->pwszName = NULL;
+	}
+	
+	if(!data->empty())
+	{
+		memcpy(data_out_ptr, data->data(), data->size());
+		
+		pdpnPlayerInfo->pvData     = data_out_ptr;
+		pdpnPlayerInfo->dwDataSize = data->size();
+		
+		data_out_ptr += data->size();
+	}
+	else{
+		pdpnPlayerInfo->pvData     = NULL;
+		pdpnPlayerInfo->dwDataSize = 0;
+	}
+	
+	if(dpnid == local_player_id)
+	{
+		pdpnPlayerInfo->dwPlayerFlags |= DPNPLAYER_LOCAL;
+	}
+	
+	if(dpnid == host_player_id)
+	{
+		pdpnPlayerInfo->dwPlayerFlags |= DPNPLAYER_HOST;
+	}
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::GetPeerAddress(CONST DPNID dpnid, IDirectPlay8Address** CONST pAddress, CONST DWORD dwFlags)

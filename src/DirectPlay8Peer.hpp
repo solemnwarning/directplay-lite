@@ -125,6 +125,10 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		DPNID local_player_id;
 		void *local_player_ctx;
 		
+		/* Local player name and data used by GetPeerInfo() and SetPeerInfo() */
+		std::wstring local_player_name;
+		std::vector<unsigned char> local_player_data;
+		
 		DPNID next_player_id;
 		DPNID host_player_id;
 		

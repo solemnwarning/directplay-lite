@@ -5,7 +5,8 @@
 AsyncHandleAllocator::AsyncHandleAllocator():
 	next_enum_id(1),
 	next_connect_id(1),
-	next_send_id(1) {}
+	next_send_id(1),
+	next_pinfo_id(1) {}
 
 DPNHANDLE AsyncHandleAllocator::new_enum()
 {
@@ -41,6 +42,19 @@ DPNHANDLE AsyncHandleAllocator::new_send()
 	if(next_send_id == 0)
 	{
 		next_send_id = 1;
+	}
+	
+	return handle;
+}
+
+DPNHANDLE AsyncHandleAllocator::new_pinfo()
+{
+	DPNHANDLE handle = next_pinfo_id++ | TYPE_ENUM;
+	
+	next_pinfo_id &= ~TYPE_MASK;
+	if(next_pinfo_id == 0)
+	{
+		next_pinfo_id = 1;
 	}
 	
 	return handle;

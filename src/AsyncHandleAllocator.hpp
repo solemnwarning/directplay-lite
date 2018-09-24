@@ -22,19 +22,22 @@ class AsyncHandleAllocator
 		DPNHANDLE next_enum_id;
 		DPNHANDLE next_connect_id;
 		DPNHANDLE next_send_id;
+		DPNHANDLE next_pinfo_id;
 		
 	public:
-		static const DPNHANDLE TYPE_MASK    = 0xC0000000;
+		static const DPNHANDLE TYPE_MASK    = 0x1C000000;
 		
-		static const DPNHANDLE TYPE_ENUM    = 0x00000000;
-		static const DPNHANDLE TYPE_CONNECT = 0x40000000;
-		static const DPNHANDLE TYPE_SEND    = 0x80000000;
+		static const DPNHANDLE TYPE_ENUM    = 0x000000000; /* EnumHosts() */
+		static const DPNHANDLE TYPE_CONNECT = 0x040000000; /* Connect() */
+		static const DPNHANDLE TYPE_SEND    = 0x080000000; /* SendTo() */
+		static const DPNHANDLE TYPE_PINFO   = 0x0C0000000; /* SetPeerInfo() */
 		
 		AsyncHandleAllocator();
 		
 		DPNHANDLE new_enum();
 		DPNHANDLE new_connect();
 		DPNHANDLE new_send();
+		DPNHANDLE new_pinfo();
 };
 
 #endif /* !DPLITE_ASYNCHANDLEALLOCATOR_HPP */
