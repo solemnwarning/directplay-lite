@@ -257,11 +257,10 @@ void HostEnumerator::handle_packet(const void *data, size_t size, struct sockadd
 	sender_address->AddComponent(DPNA_KEY_HOSTNAME,
 		from_addr_ip_s, strlen(from_addr_ip_s) + 1, DPNA_DATATYPE_STRING_ANSI);
 	
-	char from_addr_port_s[8];
-	snprintf(from_addr_port_s, sizeof(from_addr_port_s), "%u", (unsigned)(ntohs(from_addr->sin_port)));
+	DWORD from_port_dw = ntohs(from_addr->sin_port);
 	
 	sender_address->AddComponent(DPNA_KEY_PORT,
-		from_addr_port_s, strlen(from_addr_port_s) + 1, DPNA_DATATYPE_STRING_ANSI);
+		&from_port_dw, sizeof(from_port_dw), DPNA_DATATYPE_DWORD);
 	
 	/* Build a DirectPlay8Address with the interface we received the response on.
 	 * TODO: Actually do this.
