@@ -111,6 +111,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			DPNID player_id;  /* Player ID, not initialised before state PS_CONNECTED. */
 			void *player_ctx; /* Player context, not initialised before state PS_CONNECTED. */
 			
+			std::wstring player_name;
+			std::vector<unsigned char> player_data;
+			
 			bool recv_busy;
 			unsigned char recv_buf[MAX_PACKET_SIZE];
 			size_t recv_buf_cur;
@@ -119,7 +122,17 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			
 			SendQueue sq;
 			
+			/* Some messages require confirmation of success/failure from the other
+			 * peer. Each of these is assigned a rolling (per peer) ID, the callback
+			 * associated to which is called when we get a DPLITE_MSGID_ACK.
+			 */
+			DWORD next_ack_id;
+			std::map< DWORD, std::function<void(std::unique_lock<std::mutex>&, HRESULT)> > pending_acks;
+			
 			Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port);
+			
+			DWORD alloc_ack_id();
+			void register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
 		};
 		
 		DPNID local_player_id;
@@ -177,6 +190,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_host_connect_ok(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_host_connect_fail(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_message(std::unique_lock<std::mutex> &l, const PacketDeserialiser &pd);
+		void handle_playerinfo(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_ack(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		
 		void connect_check(std::unique_lock<std::mutex> &l);
 		void connect_fail(std::unique_lock<std::mutex> &l, HRESULT hResultCode, const void *pvApplicationReplyData, DWORD dwApplicationReplyDataSize);

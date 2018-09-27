@@ -940,30 +940,156 @@ HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo
 		}
 	}
 	
-	/* TODO: Send update to peers. */
-	
-	if(dwFlags & DPNSETPEERINFO_SYNC)
+	/* If called before creating or joining a session, SetPeerInfo() returns S_OK and
+	 * doesn't fire any local messages.
+	*/
+	if(state != STATE_HOSTING && state != STATE_CONNECTED)
 	{
 		return S_OK;
 	}
+	
+	std::function<void(std::unique_lock<std::mutex>&, HRESULT)> op_finished_cb;
+	
+	unsigned int sync_pending = 0;
+	unsigned int *pending = &sync_pending;
+	
+	std::condition_variable sync_cv;
+	HRESULT sync_result = S_OK;
+	
+	DPNHANDLE async_handle = handle_alloc.new_pinfo();
+	HRESULT *async_result = NULL;
+	
+	if(dwFlags & DPNSETPEERINFO_SYNC)
+	{
+		op_finished_cb = [this, pending, &sync_result, &sync_cv](std::unique_lock<std::mutex> &l, HRESULT result)
+		{
+			if(result != S_OK && sync_result == S_OK)
+			{
+				/* Error code from the first failure wins. */
+				sync_result = result;
+			}
+			
+			if(--(*pending) == 0)
+			{
+				sync_cv.notify_one();
+			}
+		};
+	}
 	else{
-		DPNHANDLE handle = handle_alloc.new_pinfo();
-		
 		if(phAsyncHandle != NULL)
 		{
-			*phAsyncHandle = handle;
+			*phAsyncHandle = async_handle;
 		}
 		
-		DPNMSG_ASYNC_OP_COMPLETE oc;
-		memset(&oc, 0, sizeof(oc));
+		pending = new unsigned int(0);
+		async_result = new HRESULT(S_OK);
 		
-		oc.dwSize        = sizeof(oc);
-		oc.hAsyncOp      = handle;
-		oc.pvUserContext = pvAsyncContext;
-		oc.hResultCode   = S_OK;
+		op_finished_cb = [this, pending, async_result, async_handle, pvAsyncContext](std::unique_lock<std::mutex> &l, HRESULT result)
+		{
+			if(result != S_OK && *async_result == S_OK)
+			{
+				/* Error code from the first failure wins. */
+				*async_result = result;
+			}
+			
+			if(--(*pending) == 0)
+			{
+				DPNMSG_ASYNC_OP_COMPLETE oc;
+				memset(&oc, 0, sizeof(oc));
+				
+				oc.dwSize        = sizeof(oc);
+				oc.hAsyncOp      = async_handle;
+				oc.pvUserContext = pvAsyncContext;
+				oc.hResultCode   = *async_result;
+				
+				delete async_result;
+				delete pending;
+				
+				l.unlock();
+				message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
+				l.lock();
+			}
+		};
+	}
+	
+	for(auto pi = peers.begin(); pi != peers.end(); ++pi)
+	{
+		unsigned int peer_id = pi->first;
+		Peer *peer = pi->second;
+		
+		if(peer->state != Peer::PS_CONNECTED)
+		{
+			continue;
+		}
+		
+		DWORD ack_id = peer->alloc_ack_id();
+		
+		PacketSerialiser playerinfo(DPLITE_MSGID_PLAYERINFO);
+		
+		playerinfo.append_dword(local_player_id);
+		playerinfo.append_wstring(local_player_name);
+		playerinfo.append_data(local_player_data.data(), local_player_data.size());
+		playerinfo.append_dword(ack_id);
+		
+		pi->second->sq.send(SendQueue::SEND_PRI_MEDIUM, playerinfo, NULL,
+			[this, op_finished_cb, peer_id, ack_id]
+			(std::unique_lock<std::mutex> &l, HRESULT result)
+			{
+				if(result == S_OK)
+				{
+					/* DPLITE_MSGID_PLAYERINFO has been sent, register the op
+					 * to handle the response.
+					*/
+					Peer *peer = get_peer_by_peer_id(peer_id);
+					assert(peer != NULL);
+					
+					peer->register_ack(ack_id, [op_finished_cb](std::unique_lock<std::mutex> &l, HRESULT result)
+					{
+						op_finished_cb(l, result);
+					});
+				}
+				else{
+					op_finished_cb(l, result);
+				}
+			});
+		
+		++(*pending);
+	}
+	
+	/* Bodge to dispatch a DPNMSG_ASYNC_OP_COMPLETE if we didn't have any
+	 * peers to notify. None of the send callbacks could have touched
+	 * pending by this point since we haven't released the lock.
+	*/
+	bool no_peers_to_notify = (*pending == 0);
+	
+	{
+		/* Notify the local instance it just changed its own peer info... which the
+		 * official DirectX does for some reason.
+		*/
+		
+		DPNMSG_PEER_INFO pi;
+		memset(&pi, 0, sizeof(pi));
+		
+		pi.dwSize          = sizeof(DPNMSG_PEER_INFO);
+		pi.dpnidPeer       = local_player_id;
+		pi.pvPlayerContext = local_player_ctx;
 		
 		l.unlock();
-		message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
+		message_handler(message_handler_ctx, DPN_MSGID_PEER_INFO, &pi);
+		l.lock();
+	}
+	
+	if(dwFlags & DPNSETPEERINFO_SYNC)
+	{
+		sync_cv.wait(l, [pending]() { return (*pending == 0); });
+		return sync_result;
+	}
+	else{
+		if(no_peers_to_notify)
+		{
+			++(*pending);
+			op_finished_cb(l, S_OK);
+		}
 		
 		return DPNSUCCESS_PENDING;
 	}
@@ -988,8 +1114,8 @@ HRESULT DirectPlay8Peer::GetPeerInfo(CONST DPNID dpnid, DPN_PLAYER_INFO* CONST p
 			return DPNERR_INVALIDPLAYER;
 		}
 		
-		UNIMPLEMENTED("DirectPlay8Peer::GetPeerInfo");
-		return DPNERR_GENERIC;
+		name = &(peer->player_name);
+		data = &(peer->player_data);
 	}
 	
 	size_t needed_buf_size = sizeof(DPN_PLAYER_INFO) + data->size() + ((name->length() + !name->empty()) * sizeof(wchar_t));
@@ -1480,6 +1606,9 @@ void DirectPlay8Peer::io_peer_connected(std::unique_lock<std::mutex> &l, unsigne
 				connect_host.append_null();
 			}
 			
+			connect_host.append_wstring(local_player_name);
+			connect_host.append_data(local_player_data.data(), local_player_data.size());
+			
 			peer->sq.send(SendQueue::SEND_PRI_MEDIUM,
 				connect_host,
 				NULL,
@@ -1656,6 +1785,18 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 						break;
 					}
 					
+					case DPLITE_MSGID_PLAYERINFO:
+					{
+						handle_playerinfo(l, peer_id, *pd);
+						break;
+					}
+					
+					case DPLITE_MSGID_ACK:
+					{
+						handle_ack(l, peer_id, *pd);
+						break;
+					}
+					
 					default:
 						/* TODO: Log "unrecognised packet type" */
 						break;
@@ -1774,6 +1915,8 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 	
 	while((peer = get_peer_by_peer_id(peer_id)) != NULL)
 	{
+		/* Cancel any outstanding sends and notify the callbacks. */
+		
 		SendQueue::SendOp *sqop;
 		if((sqop = peer->sq.get_pending()) != NULL)
 		{
@@ -1782,6 +1925,23 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 			sqop->invoke_callback(l, outstanding_op_result);
 			
 			delete sqop;
+			
+			/* Return to the start in case the peer has gone away while the lock was
+			 * released to run the callback.
+			*/
+			continue;
+		}
+		
+		/* Fail any outstanding acks and notify the callbacks. */
+		
+		if(!peer->pending_acks.empty())
+		{
+			auto ai = peer->pending_acks.begin();
+			
+			std::function<void(std::unique_lock<std::mutex>&, HRESULT)> callback = ai->second;
+			peer->pending_acks.erase(ai);
+			
+			callback(l, outstanding_op_result);
 			
 			/* Return to the start in case the peer has gone away while the lock was
 			 * released to run the callback.
@@ -2007,6 +2167,17 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 		return;
 	}
 	
+	peer->player_name = pd.get_wstring(4);
+	
+	peer->player_data.clear();
+	
+	std::pair<const void*, size_t> player_data = pd.get_data(5);
+	
+	peer->player_data.reserve(player_data.second);
+	peer->player_data.insert(peer->player_data.end(),
+		(const unsigned char*)(player_data.first),
+		(const unsigned char*)(player_data.first) + player_data.second);
+	
 	DPNMSG_INDICATE_CONNECT ic;
 	memset(&ic, 0, sizeof(ic));
 	
@@ -2079,6 +2250,9 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 		else{
 			connect_host_ok.append_null();
 		}
+		
+		connect_host_ok.append_wstring(local_player_name);
+		connect_host_ok.append_data(local_player_data.data(), local_player_data.size());
 		
 		peer->sq.send(SendQueue::SEND_PRI_MEDIUM,
 			connect_host_ok,
@@ -2155,11 +2329,13 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 		abort();
 	}
 	
+	int after_peers_base = 4 + (n_other_peers * 3);
+	
 	connect_reply_data.clear();
 	
-	if(!pd.is_null(4 + (n_other_peers * 3)))
+	if(!pd.is_null(after_peers_base + 0))
 	{
-		std::pair<const void*, size_t> d = pd.get_data(4 + (n_other_peers * 3));
+		std::pair<const void*, size_t> d = pd.get_data(after_peers_base + 0);
 		
 		if(d.second > 0)
 		{
@@ -2169,6 +2345,17 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 				(unsigned const char*)(d.first) + d.second);
 		}
 	}
+	
+	peer->player_name = pd.get_wstring(after_peers_base + 1);
+	
+	peer->player_data.clear();
+	
+	std::pair<const void*, size_t> player_data = pd.get_data(after_peers_base + 2);
+	
+	peer->player_data.reserve(player_data.second);
+	peer->player_data.insert(peer->player_data.end(),
+		(const unsigned char*)(player_data.first),
+		(const unsigned char*)(player_data.first) + player_data.second);
 	
 	peer->state = Peer::PS_CONNECTED;
 	
@@ -2291,6 +2478,85 @@ void DirectPlay8Peer::handle_message(std::unique_lock<std::mutex> &l, const Pack
 	}
 }
 
+void DirectPlay8Peer::handle_playerinfo(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DPNID player_id = pd.get_dword(0);
+		std::wstring name = pd.get_wstring(1);
+		std::pair<const void*, size_t> data = pd.get_data(2);
+		DWORD ack_id = pd.get_dword(3);
+		
+		if(peer->state != Peer::PS_CONNECTED || player_id != peer->player_id)
+		{
+			/* TODO: LOG ME */
+			return;
+		}
+		
+		peer->player_name = name;
+		
+		peer->player_data.clear();
+		peer->player_data.insert(peer->player_data.end(),
+			(const unsigned char*)(data.first),
+			(const unsigned char*)(data.first) + data.second);
+		
+		/* TODO: Should we send DPLITE_MSGID_ACK before or after the callback
+		 * completes?
+		*/
+		
+		PacketSerialiser ack(DPLITE_MSGID_ACK);
+		ack.append_dword(ack_id);
+		ack.append_dword(S_OK);
+		
+		peer->sq.send(SendQueue::SEND_PRI_HIGH, ack, NULL,
+			[](std::unique_lock<std::mutex> &l, HRESULT s_result) {});
+		
+		DPNMSG_PEER_INFO pi;
+		memset(&pi, 0, sizeof(pi));
+		
+		pi.dwSize          = sizeof(pi);
+		pi.dpnidPeer       = peer->player_id;
+		pi.pvPlayerContext = peer->player_ctx;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_PEER_INFO, &pi);
+		l.lock();
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		/* TODO: LOG ME */
+	}
+}
+
+void DirectPlay8Peer::handle_ack(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DWORD ack_id = pd.get_dword(0);
+		HRESULT result = pd.get_dword(1);
+		
+		auto ai = peer->pending_acks.find(ack_id);
+		if(ai == peer->pending_acks.end())
+		{
+			/* TODO: LOG ME */
+			return;
+		}
+		
+		std::function<void(std::unique_lock<std::mutex>&, HRESULT)> callback = ai->second;
+		peer->pending_acks.erase(ai);
+		
+		callback(l, result);
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		/* TODO: LOG ME */
+	}
+}
+
 /* Check if we have finished connecting and should enter STATE_CONNECTED.
  *
  * This is called after processing either of:
@@ -2388,5 +2654,22 @@ void DirectPlay8Peer::connect_fail(std::unique_lock<std::mutex> &l, HRESULT hRes
 }
 
 DirectPlay8Peer::Peer::Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port):
-	state(state), sock(sock), ip(ip), port(port), recv_busy(false), recv_buf_cur(0), sq(event)
+	state(state), sock(sock), ip(ip), port(port), recv_busy(false), recv_buf_cur(0), sq(event), next_ack_id(1)
 {}
+
+DWORD DirectPlay8Peer::Peer::alloc_ack_id()
+{
+	DWORD id = next_ack_id++;
+	if(next_ack_id == 0)
+	{
+		++next_ack_id;
+	}
+	
+	return id;
+}
+
+void DirectPlay8Peer::Peer::register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback)
+{
+	assert(pending_acks.find(id) == pending_acks.end());
+	pending_acks.emplace(id, callback);
+}

@@ -261,6 +261,30 @@ static void EXPECT_SESSIONS(std::map<GUID, FoundSession, CompareGUID> got, const
 	}
 }
 
+static void EXPECT_PEERINFO(IDirectPlay8Peer *instance, DPNID player_id, const wchar_t *name, const void *data, size_t data_size, DWORD flags)
+{
+	DWORD buf_size = 0;
+	
+	ASSERT_EQ(instance->GetPeerInfo(player_id, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+	EXPECT_EQ(buf_size, sizeof(DPN_PLAYER_INFO) + ((wcslen(name) + 1) * sizeof(wchar_t)) + data_size);
+	
+	std::vector<unsigned char> buffer(buf_size);
+	DPN_PLAYER_INFO *info = (DPN_PLAYER_INFO*)(buffer.data());
+	
+	info->dwSize = sizeof(DPN_PLAYER_INFO);
+	
+	ASSERT_EQ(instance->GetPeerInfo(player_id, info, &buf_size, 0), S_OK);
+	
+	EXPECT_EQ(info->dwSize,        sizeof(DPN_PLAYER_INFO));
+	EXPECT_EQ(info->dwInfoFlags,   (DPNINFO_NAME | DPNINFO_DATA));
+	EXPECT_EQ(info->dwPlayerFlags, (flags));
+	
+	EXPECT_EQ(std::wstring(info->pwszName), std::wstring(name));
+	
+	EXPECT_EQ(std::string((const char*)(info->pvData), info->dwDataSize),
+		std::string((const char*)(data), data_size));
+}
+
 TEST(DirectPlay8Peer, EnumHostsSync)
 {
 	SessionHost a1s1(APP_GUID_1, L"Application 1 Session 1");
@@ -3113,4 +3137,1038 @@ TEST(DirectPlay8Peer, SyncSendToHostToNone)
 	EXPECT_EQ(host_seq, 0);
 	
 	testing = false;
+}
+
+TEST(DirectPlay8Peer, SetPeerInfoSyncBeforeHost)
+{
+	std::atomic<bool> testing(false);
+	
+	std::atomic<int> host_seq(0), p1_seq(0);
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	std::function<HRESULT(DWORD,PVOID)> host_cb =
+		[&testing, &host_seq, &host_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER && host_player_id == -1)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				host_player_id = cp->dpnidPlayer;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++host_seq;
+			
+			switch(seq)
+			{
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance host;
+	
+	ASSERT_EQ(host->Initialize(&host_cb, &callback_shim, 0), S_OK);
+	
+	const wchar_t *HOST_NAME = L"Da Host";
+	const unsigned char HOST_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x00, 0xAA, 0xBB, 0xCC };
+	
+	{
+		DPN_PLAYER_INFO info;
+		memset(&info, 0, sizeof(info));
+		
+		info.dwSize      = sizeof(info);
+		info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+		info.pwszName    = (wchar_t*)(HOST_NAME);
+		info.pvData      = (void*)(HOST_DATA);
+		info.dwDataSize  = sizeof(HOST_DATA);
+		
+		ASSERT_EQ(host->SetPeerInfo(&info, NULL, NULL, DPNSETPEERINFO_SYNC), S_OK);
+	}
+	
+	{
+		DPN_APPLICATION_DESC app_desc;
+		memset(&app_desc, 0, sizeof(app_desc));
+		
+		app_desc.dwSize = sizeof(app_desc);
+		app_desc.guidApplication = APP_GUID_1;
+		app_desc.pwszSessionName = (wchar_t*)(L"Session 1");
+		
+		IDP8AddressInstance addr;
+		
+		DWORD port = PORT;
+		
+		ASSERT_EQ(addr->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		ASSERT_EQ(addr->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD), S_OK);
+		
+		ASSERT_EQ(host->Host(&app_desc, &(addr.instance), 1, NULL, NULL, (void*)(0xB00), 0), S_OK);
+	}
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&testing, &p1_seq, &p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++p1_seq;
+			
+			switch(seq)
+			{
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	/* Check the host has its own player data. */
+	EXPECT_PEERINFO(host.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), (DPNPLAYER_LOCAL | DPNPLAYER_HOST));
+	
+	/* Check the peer has the host's data. */
+	EXPECT_PEERINFO(p1.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), DPNPLAYER_HOST);
+}
+
+TEST(DirectPlay8Peer, SetPeerInfoSyncAfterPeerConnects)
+{
+	const wchar_t *HOST_NAME = L"Da Host";
+	const unsigned char HOST_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x00, 0xAA, 0xBB, 0xCC };
+	
+	std::atomic<bool> testing(false);
+	
+	std::atomic<int> host_seq(0), p1_seq(0);
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	IDirectPlay8Peer *hostp;
+	
+	std::function<HRESULT(DWORD,PVOID)> host_cb =
+		[&testing, &host_seq, &host_player_id, &hostp, &HOST_NAME, &HOST_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER && host_player_id == -1)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				host_player_id = cp->dpnidPlayer;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++host_seq;
+			
+			switch(seq)
+			{
+				case 1:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_PEER_INFO);
+					
+					if(dwMessageType == DPN_MSGID_PEER_INFO)
+					{
+						DPNMSG_PEER_INFO *pi = (DPNMSG_PEER_INFO*)(pMessage);
+						
+						EXPECT_EQ(pi->dwSize,          sizeof(DPNMSG_PEER_INFO));
+						EXPECT_EQ(pi->dpnidPeer,       host_player_id);
+						EXPECT_EQ(pi->pvPlayerContext, (void*)(0xB00));
+						
+						EXPECT_PEERINFO(hostp, host_player_id,
+							HOST_NAME, HOST_DATA, sizeof(HOST_DATA), (DPNPLAYER_LOCAL | DPNPLAYER_HOST));
+					}
+					
+					break;
+				}
+				
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance host;
+	hostp = host.instance;
+	
+	ASSERT_EQ(host->Initialize(&host_cb, &callback_shim, 0), S_OK);
+	
+	{
+		DPN_APPLICATION_DESC app_desc;
+		memset(&app_desc, 0, sizeof(app_desc));
+		
+		app_desc.dwSize = sizeof(app_desc);
+		app_desc.guidApplication = APP_GUID_1;
+		app_desc.pwszSessionName = (wchar_t*)(L"Session 1");
+		
+		IDP8AddressInstance addr;
+		
+		DWORD port = PORT;
+		
+		ASSERT_EQ(addr->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		ASSERT_EQ(addr->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD), S_OK);
+		
+		ASSERT_EQ(host->Host(&app_desc, &(addr.instance), 1, NULL, NULL, (void*)(0xB00), 0), S_OK);
+	}
+	
+	IDirectPlay8Peer *p1p;
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&testing, &p1_seq, &p1_player_id, &host_player_id, &p1p, &HOST_NAME, &HOST_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			else if(dwMessageType == DPN_MSGID_CREATE_PLAYER)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				
+				if(cp->dpnidPlayer == host_player_id)
+				{
+					cp->pvPlayerContext = (void*)(0x1234);
+				}
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++p1_seq;
+			
+			switch(seq)
+			{
+				case 1:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_PEER_INFO);
+					
+					if(dwMessageType == DPN_MSGID_PEER_INFO)
+					{
+						DPNMSG_PEER_INFO *pi = (DPNMSG_PEER_INFO*)(pMessage);
+						
+						EXPECT_EQ(pi->dwSize,          sizeof(DPNMSG_PEER_INFO));
+						EXPECT_EQ(pi->dpnidPeer,       host_player_id);
+						EXPECT_EQ(pi->pvPlayerContext, (void*)(0x1234));
+						
+						EXPECT_PEERINFO(p1p, host_player_id,
+							HOST_NAME, HOST_DATA, sizeof(HOST_DATA), DPNPLAYER_HOST);
+					}
+					
+					break;
+				}
+				
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	p1p = p1.instance;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	testing = true;
+	
+	{
+		
+		DPN_PLAYER_INFO info;
+		memset(&info, 0, sizeof(info));
+		
+		info.dwSize      = sizeof(info);
+		info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+		info.pwszName    = (wchar_t*)(HOST_NAME);
+		info.pvData      = (void*)(HOST_DATA);
+		info.dwDataSize  = sizeof(HOST_DATA);
+		
+		ASSERT_EQ(host->SetPeerInfo(&info, NULL, NULL, DPNSETPEERINFO_SYNC), S_OK);
+	}
+	
+	Sleep(250);
+	
+	/* Check the host has its own player data. */
+	EXPECT_PEERINFO(host.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), (DPNPLAYER_LOCAL | DPNPLAYER_HOST));
+	
+	/* Check the peer has the host's data. */
+	EXPECT_PEERINFO(p1.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), DPNPLAYER_HOST);
+	
+	testing = false;
+	
+	EXPECT_EQ(host_seq, 1);
+	EXPECT_EQ(p1_seq, 1);
+}
+
+TEST(DirectPlay8Peer, SetPeerInfoSyncBeforeConnect)
+{
+	std::atomic<bool> testing(false);
+	
+	std::atomic<int> host_seq(0), p1_seq(0);
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	std::function<HRESULT(DWORD,PVOID)> host_cb =
+		[&testing, &host_seq, &host_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER && host_player_id == -1)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				host_player_id = cp->dpnidPlayer;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++host_seq;
+			
+			switch(seq)
+			{
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance host;
+	
+	ASSERT_EQ(host->Initialize(&host_cb, &callback_shim, 0), S_OK);
+	
+	{
+		DPN_APPLICATION_DESC app_desc;
+		memset(&app_desc, 0, sizeof(app_desc));
+		
+		app_desc.dwSize = sizeof(app_desc);
+		app_desc.guidApplication = APP_GUID_1;
+		app_desc.pwszSessionName = (wchar_t*)(L"Session 1");
+		
+		IDP8AddressInstance addr;
+		
+		DWORD port = PORT;
+		
+		ASSERT_EQ(addr->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		ASSERT_EQ(addr->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD), S_OK);
+		
+		ASSERT_EQ(host->Host(&app_desc, &(addr.instance), 1, NULL, NULL, (void*)(0xB00), 0), S_OK);
+	}
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&testing, &p1_seq, &p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++p1_seq;
+			
+			switch(seq)
+			{
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	const wchar_t *P1_NAME = L"Not Da Host";
+	const unsigned char P1_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x00, 0xAA, 0xBB, 0xCC };
+	
+	{
+		DPN_PLAYER_INFO info;
+		memset(&info, 0, sizeof(info));
+		
+		info.dwSize      = sizeof(info);
+		info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+		info.pwszName    = (wchar_t*)(P1_NAME);
+		info.pvData      = (void*)(P1_DATA);
+		info.dwDataSize  = sizeof(P1_DATA);
+		
+		ASSERT_EQ(p1->SetPeerInfo(&info, NULL, NULL, DPNSETPEERINFO_SYNC), S_OK);
+	}
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	/* Check the host has the peer's data. */
+	EXPECT_PEERINFO(host.instance, p1_player_id,
+		P1_NAME, P1_DATA, sizeof(P1_DATA), 0);
+	
+	/* Check the peer has its own data. */
+	EXPECT_PEERINFO(p1.instance, p1_player_id,
+		P1_NAME, P1_DATA, sizeof(P1_DATA), DPNPLAYER_LOCAL);
+}
+
+TEST(DirectPlay8Peer, SetPeerInfoSyncAfterConnect)
+{
+	const wchar_t *P1_NAME = L"Not Da Host";
+	const unsigned char P1_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x00, 0xAA, 0xBB, 0xCC };
+	
+	std::atomic<bool> testing(false);
+	
+	std::atomic<int> host_seq(0), p1_seq(0);
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	IDirectPlay8Peer *hostp;
+	
+	std::function<HRESULT(DWORD,PVOID)> host_cb =
+		[&testing, &host_seq, &host_player_id, &p1_player_id, &hostp, &P1_NAME, &P1_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER && host_player_id == -1)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				host_player_id = cp->dpnidPlayer;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++host_seq;
+			
+			switch(seq)
+			{
+				case 1:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_PEER_INFO);
+					
+					if(dwMessageType == DPN_MSGID_PEER_INFO)
+					{
+						DPNMSG_PEER_INFO *pi = (DPNMSG_PEER_INFO*)(pMessage);
+						
+						EXPECT_EQ(pi->dwSize,          sizeof(DPNMSG_PEER_INFO));
+						EXPECT_EQ(pi->dpnidPeer,       p1_player_id);
+						EXPECT_EQ(pi->pvPlayerContext, (void*)(0x0000));
+						
+						EXPECT_PEERINFO(hostp, p1_player_id,
+							P1_NAME, P1_DATA, sizeof(P1_DATA), 0);
+					}
+					
+					break;
+				}
+				
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance host;
+	hostp = host.instance;
+	
+	ASSERT_EQ(host->Initialize(&host_cb, &callback_shim, 0), S_OK);
+	
+	{
+		DPN_APPLICATION_DESC app_desc;
+		memset(&app_desc, 0, sizeof(app_desc));
+		
+		app_desc.dwSize = sizeof(app_desc);
+		app_desc.guidApplication = APP_GUID_1;
+		app_desc.pwszSessionName = (wchar_t*)(L"Session 1");
+		
+		IDP8AddressInstance addr;
+		
+		DWORD port = PORT;
+		
+		ASSERT_EQ(addr->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		ASSERT_EQ(addr->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD), S_OK);
+		
+		ASSERT_EQ(host->Host(&app_desc, &(addr.instance), 1, NULL, NULL, (void*)(0xB00), 0), S_OK);
+	}
+	
+	IDirectPlay8Peer *p1p;
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&testing, &p1_seq, &p1_player_id, &p1p, &P1_NAME, &P1_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++p1_seq;
+			
+			switch(seq)
+			{
+				case 1:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_PEER_INFO);
+					
+					if(dwMessageType == DPN_MSGID_PEER_INFO)
+					{
+						DPNMSG_PEER_INFO *pi = (DPNMSG_PEER_INFO*)(pMessage);
+						
+						EXPECT_EQ(pi->dwSize,          sizeof(DPNMSG_PEER_INFO));
+						EXPECT_EQ(pi->dpnidPeer,       p1_player_id);
+						EXPECT_EQ(pi->pvPlayerContext, (void*)(0x0000));
+						
+						EXPECT_PEERINFO(p1p, p1_player_id,
+							P1_NAME, P1_DATA, sizeof(P1_DATA), DPNPLAYER_LOCAL);
+					}
+					
+					break;
+				}
+				
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	p1p = p1.instance;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	testing = true;
+	
+	{
+		
+		DPN_PLAYER_INFO info;
+		memset(&info, 0, sizeof(info));
+		
+		info.dwSize      = sizeof(info);
+		info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+		info.pwszName    = (wchar_t*)(P1_NAME);
+		info.pvData      = (void*)(P1_DATA);
+		info.dwDataSize  = sizeof(P1_DATA);
+		
+		ASSERT_EQ(p1->SetPeerInfo(&info, NULL, NULL, DPNSETPEERINFO_SYNC), S_OK);
+	}
+	
+	Sleep(250);
+	
+	/* Check the host has the peer's data. */
+	EXPECT_PEERINFO(host.instance, p1_player_id,
+		P1_NAME, P1_DATA, sizeof(P1_DATA), 0);
+	
+	/* Check the peer has its own data. */
+	EXPECT_PEERINFO(p1.instance, p1_player_id,
+		P1_NAME, P1_DATA, sizeof(P1_DATA), DPNPLAYER_LOCAL);
+	
+	testing = false;
+	
+	EXPECT_EQ(host_seq, 1);
+	EXPECT_EQ(p1_seq, 1);
+}
+
+TEST(DirectPlay8Peer, SetPeerInfoAsyncBeforeHost)
+{
+	std::atomic<bool> testing(false);
+	
+	std::atomic<int> host_seq(0), p1_seq(0);
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	std::function<HRESULT(DWORD,PVOID)> host_cb =
+		[&testing, &host_seq, &host_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER && host_player_id == -1)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				host_player_id = cp->dpnidPlayer;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++host_seq;
+			
+			switch(seq)
+			{
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance host;
+	
+	ASSERT_EQ(host->Initialize(&host_cb, &callback_shim, 0), S_OK);
+	
+	const wchar_t *HOST_NAME = L"Da Host";
+	const unsigned char HOST_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x00, 0xAA, 0xBB, 0xCC };
+	
+	{
+		testing = true;
+		
+		DPN_PLAYER_INFO info;
+		memset(&info, 0, sizeof(info));
+		
+		info.dwSize      = sizeof(info);
+		info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+		info.pwszName    = (wchar_t*)(HOST_NAME);
+		info.pvData      = (void*)(HOST_DATA);
+		info.dwDataSize  = sizeof(HOST_DATA);
+		
+		/* SetPeerInfo() behaves as if called synchronously if called asynchronously
+		 * before joining or creating a session.
+		*/
+		
+		DPNHANDLE setinfo_handle;
+		ASSERT_EQ(host->SetPeerInfo(&info, NULL, &setinfo_handle, 0), S_OK);
+		
+		Sleep(250);
+		
+		testing = false;
+	}
+	
+	{
+		DPN_APPLICATION_DESC app_desc;
+		memset(&app_desc, 0, sizeof(app_desc));
+		
+		app_desc.dwSize = sizeof(app_desc);
+		app_desc.guidApplication = APP_GUID_1;
+		app_desc.pwszSessionName = (wchar_t*)(L"Session 1");
+		
+		IDP8AddressInstance addr;
+		
+		DWORD port = PORT;
+		
+		ASSERT_EQ(addr->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		ASSERT_EQ(addr->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD), S_OK);
+		
+		ASSERT_EQ(host->Host(&app_desc, &(addr.instance), 1, NULL, NULL, (void*)(0xB00), 0), S_OK);
+	}
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&testing, &p1_seq, &p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++p1_seq;
+			
+			switch(seq)
+			{
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	/* Check the host has its own player data. */
+	EXPECT_PEERINFO(host.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), (DPNPLAYER_LOCAL | DPNPLAYER_HOST));
+	
+	/* Check the peer has the host's data. */
+	EXPECT_PEERINFO(p1.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), DPNPLAYER_HOST);
+	
+	EXPECT_EQ(host_seq, 0);
+	EXPECT_EQ(p1_seq, 0);
+}
+
+TEST(DirectPlay8Peer, SetPeerInfoAsyncAfterPeerConnects)
+{
+	const wchar_t *HOST_NAME = L"Da Host";
+	const unsigned char HOST_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x00, 0xAA, 0xBB, 0xCC };
+	
+	std::atomic<bool> testing(false);
+	
+	std::atomic<int> host_seq(0), p1_seq(0);
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	IDirectPlay8Peer *hostp;
+	DPNHANDLE setinfo_handle;
+	
+	std::function<HRESULT(DWORD,PVOID)> host_cb =
+		[&testing, &host_seq, &host_player_id, &hostp, &HOST_NAME, &HOST_DATA, &setinfo_handle]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER && host_player_id == -1)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				host_player_id = cp->dpnidPlayer;
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++host_seq;
+			
+			switch(seq)
+			{
+				case 1:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_PEER_INFO);
+					
+					if(dwMessageType == DPN_MSGID_PEER_INFO)
+					{
+						DPNMSG_PEER_INFO *pi = (DPNMSG_PEER_INFO*)(pMessage);
+						
+						EXPECT_EQ(pi->dwSize,          sizeof(DPNMSG_PEER_INFO));
+						EXPECT_EQ(pi->dpnidPeer,       host_player_id);
+						EXPECT_EQ(pi->pvPlayerContext, (void*)(0xB00));
+						
+						EXPECT_PEERINFO(hostp, host_player_id,
+							HOST_NAME, HOST_DATA, sizeof(HOST_DATA), (DPNPLAYER_LOCAL | DPNPLAYER_HOST));
+					}
+					
+					break;
+				}
+				
+				case 2:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_ASYNC_OP_COMPLETE);
+					
+					if(dwMessageType == DPN_MSGID_ASYNC_OP_COMPLETE)
+					{
+						DPNMSG_ASYNC_OP_COMPLETE *oc = (DPNMSG_ASYNC_OP_COMPLETE*)(pMessage);
+						
+						EXPECT_EQ(oc->dwSize,        sizeof(DPNMSG_ASYNC_OP_COMPLETE));
+						EXPECT_EQ(oc->hAsyncOp,      setinfo_handle);
+						EXPECT_EQ(oc->pvUserContext, (void*)(0x9999));
+						EXPECT_EQ(oc->hResultCode,   S_OK);
+					}
+					
+					break;
+				}
+				
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance host;
+	hostp = host.instance;
+	
+	ASSERT_EQ(host->Initialize(&host_cb, &callback_shim, 0), S_OK);
+	
+	{
+		DPN_APPLICATION_DESC app_desc;
+		memset(&app_desc, 0, sizeof(app_desc));
+		
+		app_desc.dwSize = sizeof(app_desc);
+		app_desc.guidApplication = APP_GUID_1;
+		app_desc.pwszSessionName = (wchar_t*)(L"Session 1");
+		
+		IDP8AddressInstance addr;
+		
+		DWORD port = PORT;
+		
+		ASSERT_EQ(addr->SetSP(&CLSID_DP8SP_TCPIP), S_OK);
+		ASSERT_EQ(addr->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD), S_OK);
+		
+		ASSERT_EQ(host->Host(&app_desc, &(addr.instance), 1, NULL, NULL, (void*)(0xB00), 0), S_OK);
+	}
+	
+	IDirectPlay8Peer *p1p;
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&testing, &p1_seq, &p1_player_id, &host_player_id, &p1p, &HOST_NAME, &HOST_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			else if(dwMessageType == DPN_MSGID_CREATE_PLAYER)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				
+				if(cp->dpnidPlayer == host_player_id)
+				{
+					cp->pvPlayerContext = (void*)(0x1234);
+				}
+			}
+			
+			if(!testing)
+			{
+				return DPN_OK;
+			}
+			
+			int seq = ++p1_seq;
+			
+			switch(seq)
+			{
+				case 1:
+				{
+					EXPECT_EQ(dwMessageType, DPN_MSGID_PEER_INFO);
+					
+					if(dwMessageType == DPN_MSGID_PEER_INFO)
+					{
+						DPNMSG_PEER_INFO *pi = (DPNMSG_PEER_INFO*)(pMessage);
+						
+						EXPECT_EQ(pi->dwSize,          sizeof(DPNMSG_PEER_INFO));
+						EXPECT_EQ(pi->dpnidPeer,       host_player_id);
+						EXPECT_EQ(pi->pvPlayerContext, (void*)(0x1234));
+						
+						EXPECT_PEERINFO(p1p, host_player_id,
+							HOST_NAME, HOST_DATA, sizeof(HOST_DATA), DPNPLAYER_HOST);
+					}
+					
+					break;
+				}
+				
+				default:
+					ADD_FAILURE() << "Unexpected message of type " << dwMessageType <<", sequence " << seq;
+					break;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	p1p = p1.instance;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	testing = true;
+	
+	{
+		
+		DPN_PLAYER_INFO info;
+		memset(&info, 0, sizeof(info));
+		
+		info.dwSize      = sizeof(info);
+		info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+		info.pwszName    = (wchar_t*)(HOST_NAME);
+		info.pvData      = (void*)(HOST_DATA);
+		info.dwDataSize  = sizeof(HOST_DATA);
+		
+		ASSERT_EQ(host->SetPeerInfo(&info, (void*)(0x9999), &setinfo_handle, 0), DPNSUCCESS_PENDING);
+	}
+	
+	Sleep(250);
+	
+	/* Check the host has its own player data. */
+	EXPECT_PEERINFO(host.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), (DPNPLAYER_LOCAL | DPNPLAYER_HOST));
+	
+	/* Check the peer has the host's data. */
+	EXPECT_PEERINFO(p1.instance, host_player_id,
+		HOST_NAME, HOST_DATA, sizeof(HOST_DATA), DPNPLAYER_HOST);
+	
+	testing = false;
+	
+	EXPECT_EQ(host_seq, 2);
+	EXPECT_EQ(p1_seq, 1);
 }

@@ -34,6 +34,8 @@
  * GUID           - Application GUID
  * WSTRING | NULL - Password
  * DATA | NULL    - Request data
+ * WSTRING - Player name (empty = none)
+ * DATA    - Player data (empty = none)
 */
 
 #define DPLITE_MSGID_CONNECT_HOST_OK 4
@@ -51,6 +53,8 @@
  *   DWORD - Port (host byte order)
  *
  * DATA | NULL - Response data
+ * WSTRING - Host player name (empty = none)
+ * DATA    - Host player data (empty = none)
 */
 
 #define DPLITE_MSGID_CONNECT_HOST_FAIL 5
@@ -69,6 +73,24 @@
  * DWORD - Player ID of sender
  * DATA  - Message payload
  * DWORD - Flags (DPNSEND_GUARANTEED, DPNSEND_COALESCE, DPNSEND_COMPLETEONPROCESS)
+*/
+
+#define DPLITE_MSGID_PLAYERINFO 7
+
+/* Player info has been updated by the peer using the SetPeerInfo() method.
+ *
+ * DWORD   - Player ID, will always be that of the sending peer.
+ * WSTRING - Player name (empty = none)
+ * DATA    - Player data (empty = none)
+ * DWORD   - Operation ID to return in DPLITE_MSGID_OP_COMPLETE
+*/
+
+#define DPLITE_MSGID_ACK 8
+
+/* The peer has completed processing a message.
+ *
+ * DWORD - Ack ID, should be unique to the peer, for a time.
+ * DWORD - Result code (normally S_OK)
 */
 
 #endif /* !DPLITE_MESSAGES_HPP */
