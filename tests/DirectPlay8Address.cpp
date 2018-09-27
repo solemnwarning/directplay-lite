@@ -310,8 +310,11 @@ class DirectPlay8AddressWithAStringComponent: public DirectPlay8AddressInitial
 	protected:
 		const wchar_t *REFKEY = L"key";
 		
-		const char *REFVAL = "ASCII string value";
-		const DWORD REFVSIZE = 19;
+		const char *AREFVAL = "ASCII string value";
+		const DWORD AREFVSIZE = 19;
+		
+		const wchar_t *WREFVAL = L"ASCII string value";
+		const DWORD WREFVSIZE = 38;
 		
 		unsigned char vbuf[256];
 		
@@ -319,7 +322,7 @@ class DirectPlay8AddressWithAStringComponent: public DirectPlay8AddressInitial
 		{
 			memset(vbuf, 0xFF, sizeof(vbuf));
 			
-			ASSERT_EQ(idp8->AddComponent(REFKEY, REFVAL, REFVSIZE, DPNA_DATATYPE_STRING_ANSI), S_OK);
+			ASSERT_EQ(idp8->AddComponent(REFKEY, AREFVAL, AREFVSIZE, DPNA_DATATYPE_STRING_ANSI), S_OK);
 		}
 };
 
@@ -337,43 +340,45 @@ TEST_F(DirectPlay8AddressWithAStringComponent, ComponentByNameBufferSizeZero)
 	
 	ASSERT_EQ(idp8->GetComponentByName(REFKEY, NULL, &vsize, &type), DPNERR_BUFFERTOOSMALL);
 	
-	EXPECT_EQ(vsize, REFVSIZE);
+	EXPECT_EQ(vsize, WREFVSIZE);
 }
 
 TEST_F(DirectPlay8AddressWithAStringComponent, ComponentByNameBufferSizeSmall)
 {
-	DWORD vsize = REFVSIZE - 1;
+	DWORD vsize = WREFVSIZE - 1;
 	DWORD type;
 	
 	ASSERT_EQ(idp8->GetComponentByName(REFKEY, (void*)(vbuf), &vsize, &type), DPNERR_BUFFERTOOSMALL);
 	
-	EXPECT_EQ(vsize, REFVSIZE);
+	EXPECT_EQ(vsize, WREFVSIZE);
 }
 
 TEST_F(DirectPlay8AddressWithAStringComponent, ComponentByNameBufferSizeExact)
 {
-	DWORD vsize = REFVSIZE;
+	DWORD vsize = WREFVSIZE;
 	DWORD type;
 	
 	ASSERT_EQ(idp8->GetComponentByName(REFKEY, (void*)(vbuf), &vsize, &type), S_OK);
 	
-	EXPECT_EQ(vsize, REFVSIZE);
-	EXPECT_EQ(type, (DWORD)(DPNA_DATATYPE_STRING_ANSI));
+	EXPECT_EQ(vsize, WREFVSIZE);
+	EXPECT_EQ(type, (DWORD)(DPNA_DATATYPE_STRING));
 	
-	EXPECT_EQ(std::string((const char*)(vbuf), vsize), std::string(REFVAL, REFVSIZE));
+	EXPECT_EQ(std::wstring((const wchar_t*)(vbuf), (vsize / sizeof(wchar_t))),
+		std::wstring(WREFVAL, (WREFVSIZE / sizeof(wchar_t))));
 }
 
 TEST_F(DirectPlay8AddressWithAStringComponent, ComponentByNameBufferSizeBig)
 {
-	DWORD vsize = REFVSIZE * 2;
+	DWORD vsize = WREFVSIZE * 2;
 	DWORD type;
 	
 	ASSERT_EQ(idp8->GetComponentByName(REFKEY, (void*)(vbuf), &vsize, &type), S_OK);
 	
-	EXPECT_EQ(vsize, REFVSIZE);
-	EXPECT_EQ(type, (DWORD)(DPNA_DATATYPE_STRING_ANSI));
+	EXPECT_EQ(vsize, WREFVSIZE);
+	EXPECT_EQ(type, (DWORD)(DPNA_DATATYPE_STRING));
 	
-	EXPECT_EQ(std::string((const char*)(vbuf), vsize), std::string(REFVAL, REFVSIZE));
+	EXPECT_EQ(std::wstring((const wchar_t*)(vbuf), (vsize / sizeof(wchar_t))),
+		std::wstring(WREFVAL, (WREFVSIZE / sizeof(wchar_t))));
 }
 
 // TEST_F(DirectPlay8AddressWithAStringComponent, GetURLW)

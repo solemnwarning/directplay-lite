@@ -35,16 +35,6 @@ class DirectPlay8Address: public IDirectPlay8Address
 				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType);
 		};
 		
-		class StringComponentA: public Component
-		{
-			public:
-				const std::string value;
-				
-				StringComponentA(const std::wstring &name, const char *lpvData, DWORD dwDataSize);
-				virtual Component *clone();
-				virtual HRESULT get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType);
-		};
-		
 		class DWORDComponent: public Component
 		{
 			public:

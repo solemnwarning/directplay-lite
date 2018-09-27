@@ -269,9 +269,27 @@ HRESULT DirectPlay8Address::AddComponent(CONST WCHAR* CONST pwszName, CONST void
 			break;
 			
 		case DPNA_DATATYPE_STRING_ANSI:
-			new_component = new StringComponentA(pwszName, (const char*)(lpvData), dwDataSize);
-			break;
+		{
+			/* DirectX converts ANSI strings to wide on input. */
 			
+			int wide_char_count = MultiByteToWideChar(CP_ACP, 0, (const char*)(lpvData), dwDataSize, NULL, 0);
+			if(wide_char_count == 0)
+			{
+				return DPNERR_INVALIDPARAM;
+			}
+			
+			std::vector<wchar_t> wide_char_buf(wide_char_count);
+			
+			wide_char_count = MultiByteToWideChar(CP_ACP, 0, (const char*)(lpvData), dwDataSize, wide_char_buf.data(), wide_char_count);
+			if(wide_char_count == 0)
+			{
+				return DPNERR_INVALIDPARAM;
+			}
+			
+			new_component = new StringComponentW(pwszName, wide_char_buf.data(), wide_char_count * sizeof(wchar_t));
+			break;
+		}
+		
 		case DPNA_DATATYPE_DWORD:
 			if(dwDataSize != sizeof(DWORD))
 			{
@@ -373,30 +391,6 @@ HRESULT DirectPlay8Address::StringComponentW::get_component(LPVOID pvBuffer, PDW
 		*pdwBufferSize = value.length() * sizeof(wchar_t);
 		return DPNERR_BUFFERTOOSMALL;
 	}
-}
-
-DirectPlay8Address::StringComponentA::StringComponentA(const std::wstring &name, const char *lpvData, DWORD dwDataSize):
-	Component(name, DPNA_DATATYPE_STRING_ANSI), value(lpvData, dwDataSize) {}
-
-HRESULT DirectPlay8Address::StringComponentA::get_component(LPVOID pvBuffer, PDWORD pdwBufferSize, PDWORD pdwDataType)
-{
-	*pdwDataType = DPNA_DATATYPE_STRING_ANSI;
-	
-	if(*pdwBufferSize >= value.length() && pvBuffer != NULL)
-	{
-		memcpy(pvBuffer, value.data(), value.length());
-		*pdwBufferSize = value.length();
-		return S_OK;
-	}
-	else{
-		*pdwBufferSize = value.length();
-		return DPNERR_BUFFERTOOSMALL;
-	}
-}
-
-DirectPlay8Address::Component *DirectPlay8Address::StringComponentA::clone()
-{
-	return new DirectPlay8Address::StringComponentA(name, value.data(), value.length());
 }
 
 DirectPlay8Address::DWORDComponent::DWORDComponent(const std::wstring &name, DWORD value):
