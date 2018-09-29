@@ -1406,12 +1406,70 @@ HRESULT DirectPlay8Peer::GetGroupContext(CONST DPNID dpnid,PVOID* CONST ppvGroup
 
 HRESULT DirectPlay8Peer::GetCaps(DPN_CAPS* CONST pdpCaps, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::GetCaps");
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(state == STATE_NEW)
+	{
+		return DPNERR_UNINITIALIZED;
+	}
+	
+	l.unlock();
+	
+	if(pdpCaps->dwSize == sizeof(DPN_CAPS))
+	{
+		pdpCaps->dwFlags                   = 0;
+		pdpCaps->dwConnectTimeout          = 200;
+		pdpCaps->dwConnectRetries          = 14;
+		pdpCaps->dwTimeoutUntilKeepAlive   = 25000;
+		
+		return S_OK;
+	}
+	else if(pdpCaps->dwSize == sizeof(DPN_CAPS_EX))
+	{
+		DPN_CAPS_EX *pdpCapsEx = (DPN_CAPS_EX*)(pdpCaps);
+		
+		pdpCapsEx->dwFlags                   = 0;
+		pdpCapsEx->dwConnectTimeout          = 200;
+		pdpCapsEx->dwConnectRetries          = 14;
+		pdpCapsEx->dwTimeoutUntilKeepAlive   = 25000;
+		pdpCapsEx->dwMaxRecvMsgSize          = 0xFFFFFFFF;
+		pdpCapsEx->dwNumSendRetries          = 10;
+		pdpCapsEx->dwMaxSendRetryInterval    = 5000;
+		pdpCapsEx->dwDropThresholdRate       = 7;
+		pdpCapsEx->dwThrottleRate            = 25;
+		pdpCapsEx->dwNumHardDisconnectSends  = 3;
+		pdpCapsEx->dwMaxHardDisconnectPeriod = 500;
+		
+		return S_OK;
+	}
+	else{
+		return DPNERR_INVALIDPARAM;
+	}
 }
 
 HRESULT DirectPlay8Peer::SetCaps(CONST DPN_CAPS* CONST pdpCaps, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::SetCaps");
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(state == STATE_NEW)
+	{
+		return DPNERR_UNINITIALIZED;
+	}
+	
+	l.unlock();
+	
+	if(pdpCaps->dwSize == sizeof(DPN_CAPS) || pdpCaps->dwSize == sizeof(DPN_CAPS_EX))
+	{
+		/* Our protocol doesn't have all the tunables the official DirectPlay does... so
+		 * just say everything was accepted.
+		 *
+		 * TODO: Store new values for future GetSPCaps() calls?
+		*/
+		return S_OK;
+	}
+	else{
+		return DPNERR_INVALIDPARAM;
+	}
 }
 
 HRESULT DirectPlay8Peer::SetSPCaps(CONST GUID* CONST pguidSP, CONST DPN_SP_CAPS* CONST pdpspCaps, CONST DWORD dwFlags )
