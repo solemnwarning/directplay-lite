@@ -1474,12 +1474,73 @@ HRESULT DirectPlay8Peer::SetCaps(CONST DPN_CAPS* CONST pdpCaps, CONST DWORD dwFl
 
 HRESULT DirectPlay8Peer::SetSPCaps(CONST GUID* CONST pguidSP, CONST DPN_SP_CAPS* CONST pdpspCaps, CONST DWORD dwFlags )
 {
-	UNIMPLEMENTED("DirectPlay8Peer::SetSPCaps");
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(state == STATE_NEW)
+	{
+		return DPNERR_UNINITIALIZED;
+	}
+	
+	l.unlock();
+	
+	if(pdpspCaps->dwSize != sizeof(DPN_SP_CAPS))
+	{
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	if(*pguidSP != CLSID_DP8SP_TCPIP && *pguidSP != CLSID_DP8SP_IPX)
+	{
+		return DPNERR_DOESNOTEXIST;
+	}
+	
+	/* From the DirectX 9.0 SDK:
+	 *
+	 * Currently, only the dwSystemBufferSize member can be set by this call. The dwNumThreads
+	 * member is for legacy support. Microsoft DirectX 9.0 applications should use the
+	 * IDirectPlay8ThreadPool::SetThreadCount method to set the number of threads. The other
+	 * members of the DPN_SP_CAPS structure are get-only or ignored.
+	*/
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::GetSPCaps(CONST GUID* CONST pguidSP, DPN_SP_CAPS* CONST pdpspCaps, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::GetSPCaps");
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(state == STATE_NEW)
+	{
+		return DPNERR_UNINITIALIZED;
+	}
+	
+	l.unlock();
+	
+	if(pdpspCaps->dwSize != sizeof(DPN_SP_CAPS))
+	{
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	if(*pguidSP != CLSID_DP8SP_TCPIP && *pguidSP != CLSID_DP8SP_IPX)
+	{
+		return DPNERR_DOESNOTEXIST;
+	}
+	
+	/* TCP/IP and IPX both have the same values in DirectX. */
+	
+	pdpspCaps->dwFlags = DPNSPCAPS_SUPPORTSDPNSRV
+	                   | DPNSPCAPS_SUPPORTSBROADCAST
+	                   | DPNSPCAPS_SUPPORTSALLADAPTERS
+	                   | DPNSPCAPS_SUPPORTSTHREADPOOL;
+	
+	pdpspCaps->dwNumThreads               = 3;
+	pdpspCaps->dwDefaultEnumCount         = DEFAULT_ENUM_COUNT;
+	pdpspCaps->dwDefaultEnumRetryInterval = DEFAULT_ENUM_INTERVAL;
+	pdpspCaps->dwDefaultEnumTimeout       = DEFAULT_ENUM_TIMEOUT;
+	pdpspCaps->dwMaxEnumPayloadSize       = 983;
+	pdpspCaps->dwBuffersPerThread         = 1;
+	pdpspCaps->dwSystemBufferSize         = 8192;
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::GetConnectionInfo(CONST DPNID dpnid, DPN_CONNECTION_INFO* CONST pdpConnectionInfo, CONST DWORD dwFlags)
