@@ -130,7 +130,57 @@ HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSA
 
 HRESULT DirectPlay8Peer::EnumServiceProviders(CONST GUID* CONST pguidServiceProvider, CONST GUID* CONST pguidApplication, DPN_SERVICE_PROVIDER_INFO* CONST pSPInfoBuffer, DWORD* CONST pcbEnumData, DWORD* CONST pcReturned, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::EnumServiceProviders");
+	static const DPN_SERVICE_PROVIDER_INFO IP_INFO  = { 0, CLSID_DP8SP_TCPIP, L"DirectPlay8 TCP/IP Service Provider", 0, 0 };
+	static const DPN_SERVICE_PROVIDER_INFO IPX_INFO = { 0, CLSID_DP8SP_IPX,   L"DirectPlay8 IPX Service Provider",    0, 0 };
+	
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(state == STATE_NEW)
+	{
+		return DPNERR_UNINITIALIZED;
+	}
+	
+	if(pguidServiceProvider == NULL)
+	{
+		if(*pcbEnumData < (sizeof(DPN_SERVICE_PROVIDER_INFO) * 2))
+		{
+			*pcbEnumData = sizeof(DPN_SERVICE_PROVIDER_INFO) * 2;
+			return DPNERR_BUFFERTOOSMALL;
+		}
+		
+		pSPInfoBuffer[0] = IPX_INFO;
+		pSPInfoBuffer[1] = IP_INFO;
+		
+		*pcbEnumData = sizeof(DPN_SERVICE_PROVIDER_INFO) * 2;
+		*pcReturned  = 2;
+		
+		return S_OK;
+	}
+	else if(*pguidServiceProvider == CLSID_DP8SP_TCPIP || *pguidServiceProvider == CLSID_DP8SP_IPX)
+	{
+		if(*pcbEnumData < sizeof(DPN_SERVICE_PROVIDER_INFO))
+		{
+			*pcbEnumData = sizeof(DPN_SERVICE_PROVIDER_INFO);
+			return DPNERR_BUFFERTOOSMALL;
+		}
+		
+		if(*pguidServiceProvider == CLSID_DP8SP_TCPIP)
+		{
+			pSPInfoBuffer[0] = IP_INFO;
+		}
+		else if(*pguidServiceProvider == CLSID_DP8SP_IPX)
+		{
+			pSPInfoBuffer[0] = IPX_INFO;
+		}
+		
+		*pcbEnumData = sizeof(DPN_SERVICE_PROVIDER_INFO);
+		*pcReturned  = 1;
+		
+		return S_OK;
+	}
+	else{
+		return DPNERR_DOESNOTEXIST;
+	}
 }
 
 HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONST DWORD dwFlags)
