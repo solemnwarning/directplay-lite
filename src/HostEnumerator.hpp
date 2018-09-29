@@ -10,9 +10,9 @@
 
 #include "network.hpp"
 
-#define DEFAULT_ENUM_COUNT    3
-#define DEFAULT_ENUM_INTERVAL 1000
-#define DEFAULT_ENUM_TIMEOUT  1000
+#define DEFAULT_ENUM_COUNT    5
+#define DEFAULT_ENUM_INTERVAL 1500
+#define DEFAULT_ENUM_TIMEOUT  1500
 
 class HostEnumerator
 {
