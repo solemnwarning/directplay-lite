@@ -819,21 +819,31 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 
 HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDescBuffer, DWORD* CONST pcbDataSize, CONST DWORD dwFlags)
 {
-	if(state != STATE_HOSTING && state != STATE_CONNECTED)
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
 	{
-		return DPNERR_NOCONNECTION;
+		case STATE_NEW:        return DPNERR_UNINITIALIZED;
+		case STATE_HOSTING:    break;
+		case STATE_CONNECTED:  break;
+		case STATE_CONNECTING: return DPNERR_CONNECTING;
+		default:               return DPNERR_NOCONNECTION;
 	}
 	
 	DWORD required_size = sizeof(DPN_APPLICATION_DESC)
 		+ (password.length() + !password.empty()) * sizeof(wchar_t)
 		+ application_data.size();
 	
-	if(pAppDescBuffer != NULL && *pcbDataSize >= required_size)
+	if(*pcbDataSize >= sizeof(DPN_APPLICATION_DESC) && pAppDescBuffer->dwSize != sizeof(DPN_APPLICATION_DESC))
 	{
-		unsigned char *extra_at = (unsigned char*)(pAppDescBuffer);
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	if(*pcbDataSize >= required_size)
+	{
+		unsigned char *extra_at = (unsigned char*)(pAppDescBuffer + 1);
 		
-		pAppDescBuffer->dwSize = sizeof(*pAppDescBuffer);
-		pAppDescBuffer->dwFlags = 0;
+		pAppDescBuffer->dwFlags          = 0;
 		pAppDescBuffer->guidInstance     = instance_guid;
 		pAppDescBuffer->guidApplication  = application_guid;
 		pAppDescBuffer->dwMaxPlayers     = max_players;
@@ -879,41 +889,64 @@ HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDesc
 
 HRESULT DirectPlay8Peer::SetApplicationDesc(CONST DPN_APPLICATION_DESC* CONST pad, CONST DWORD dwFlags)
 {
-	if(state == STATE_HOSTING)
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
 	{
-		if(pad->dwMaxPlayers > 0 && pad->dwMaxPlayers <= player_to_peer_id.size())
-		{
-			/* Can't set dwMaxPlayers below current player count. */
-			return DPNERR_INVALIDPARAM;
-		}
-		
-		max_players  = pad->dwMaxPlayers;
-		session_name = pad->pwszSessionName;
-		
-		if(pad->dwFlags & DPNSESSION_REQUIREPASSWORD)
-		{
-			password = pad->pwszPassword;
-		}
-		else{
-			password.clear();
-		}
-		
-		application_data.clear();
-		
-		if(pad->pvApplicationReservedData != NULL && pad->dwApplicationReservedDataSize > 0)
-		{
-			application_data.insert(application_data.begin(),
-				(unsigned char*)(pad->pvApplicationReservedData),
-				(unsigned char*)(pad->pvApplicationReservedData) + pad->dwApplicationReservedDataSize);
-		}
-		
-		/* TODO: Notify peers */
-		
-		return S_OK;
+		case STATE_NEW:     return DPNERR_UNINITIALIZED;
+		case STATE_HOSTING: break;
+		default:            return DPNERR_NOTHOST;
+	}
+	
+	if(pad->dwMaxPlayers > 0 && pad->dwMaxPlayers <= player_to_peer_id.size())
+	{
+		/* Can't set dwMaxPlayers below current player count. */
+		return DPNERR_INVALIDPARAM;
+	}
+	
+	max_players  = pad->dwMaxPlayers;
+	session_name = pad->pwszSessionName;
+	
+	if(pad->dwFlags & DPNSESSION_REQUIREPASSWORD)
+	{
+		password = pad->pwszPassword;
 	}
 	else{
-		return DPNERR_NOTHOST;
+		password.clear();
 	}
+	
+	application_data.clear();
+	
+	if(pad->pvApplicationReservedData != NULL && pad->dwApplicationReservedDataSize > 0)
+	{
+		application_data.insert(application_data.begin(),
+			(unsigned char*)(pad->pvApplicationReservedData),
+			(unsigned char*)(pad->pvApplicationReservedData) + pad->dwApplicationReservedDataSize);
+	}
+	
+	/* Notify all peers of the new application description. We don't wait for confirmation
+	 * from the other peers, they'll get it when they get it.
+	*/
+	
+	PacketSerialiser appdesc(DPLITE_MSGID_APPDESC);
+	
+	appdesc.append_dword(max_players);
+	appdesc.append_wstring(session_name);
+	appdesc.append_wstring(password);
+	appdesc.append_data(application_data.data(), application_data.size());
+	
+	for(auto pi = peers.begin(); pi != peers.end(); ++pi)
+	{
+		if(pi->second->state != Peer::PS_CONNECTED)
+		{
+			continue;
+		}
+		
+		pi->second->sq.send(SendQueue::SEND_PRI_MEDIUM, appdesc, NULL,
+			[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+	}
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, void* CONST pvGroupContext, void* CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
@@ -1966,6 +1999,12 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 						break;
 					}
 					
+					case DPLITE_MSGID_APPDESC:
+					{
+						handle_appdesc(l, peer_id, *pd);
+						break;
+					}
+					
 					default:
 						/* TODO: Log "unrecognised packet type" */
 						break;
@@ -2423,6 +2462,11 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 		connect_host_ok.append_wstring(local_player_name);
 		connect_host_ok.append_data(local_player_data.data(), local_player_data.size());
 		
+		connect_host_ok.append_dword(max_players);
+		connect_host_ok.append_wstring(session_name);
+		connect_host_ok.append_wstring(password);
+		connect_host_ok.append_data(application_data.data(), application_data.size());
+		
 		peer->sq.send(SendQueue::SEND_PRI_MEDIUM,
 			connect_host_ok,
 			NULL,
@@ -2525,6 +2569,17 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 	peer->player_data.insert(peer->player_data.end(),
 		(const unsigned char*)(player_data.first),
 		(const unsigned char*)(player_data.first) + player_data.second);
+	
+	max_players  = pd.get_dword(after_peers_base + 3);
+	session_name = pd.get_wstring(after_peers_base + 4);
+	password     = pd.get_wstring(after_peers_base + 5);
+	
+	std::pair<const void*, size_t> application_data = pd.get_data(after_peers_base + 6);
+	
+	this->application_data.clear();
+	this->application_data.insert(this->application_data.end(),
+		(const unsigned char*)(application_data.first),
+		(const unsigned char*)(application_data.first) + application_data.second);
 	
 	peer->state = Peer::PS_CONNECTED;
 	
@@ -2719,6 +2774,53 @@ void DirectPlay8Peer::handle_ack(std::unique_lock<std::mutex> &l, unsigned int p
 		peer->pending_acks.erase(ai);
 		
 		callback(l, result);
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		/* TODO: LOG ME */
+	}
+}
+
+void DirectPlay8Peer::handle_appdesc(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DWORD                          max_players      = pd.get_dword(0);
+		std::wstring                   session_name     = pd.get_wstring(1);
+		std::wstring                   password         = pd.get_wstring(2);
+		std::pair<const void*, size_t> application_data = pd.get_data(3);
+		
+		if(peer->state != Peer::PS_CONNECTED)
+		{
+			/* TODO: LOG ME */
+			return;
+		}
+		
+		if(peer->player_id != host_player_id)
+		{
+			/* TODO: LOG ME */
+			return;
+		}
+		
+		this->max_players  = max_players;
+		this->session_name = session_name;
+		this->password     = password;
+		
+		this->application_data.clear();
+		this->application_data.insert(this->application_data.end(),
+			(const unsigned char*)(application_data.first),
+			(const unsigned char*)(application_data.first) + application_data.second);
+		
+		/* DPN_MSGID_APPLICATION_DESC has no accompanying structure.
+		 * The application must call GetApplicationDesc() to obtain the
+		 * new data.
+		*/
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_APPLICATION_DESC, NULL);
+		l.lock();
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{

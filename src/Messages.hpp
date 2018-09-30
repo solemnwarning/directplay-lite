@@ -55,6 +55,10 @@
  * DATA | NULL - Response data
  * WSTRING - Host player name (empty = none)
  * DATA    - Host player data (empty = none)
+ * DWORD   - DPN_APPLICATION_DESC.dwMaxPlayers
+ * WSTRING - DPN_APPLICATION_DESC.pwszSessionName
+ * WSTRING - DPN_APPLICATION_DESC.pwszPassword
+ * DATA    - DPN_APPLICATION_DESC.pvApplicationReservedData
 */
 
 #define DPLITE_MSGID_CONNECT_HOST_FAIL 5
@@ -91,6 +95,16 @@
  *
  * DWORD - Ack ID, should be unique to the peer, for a time.
  * DWORD - Result code (normally S_OK)
+*/
+
+#define DPLITE_MSGID_APPDESC 9
+
+/* The host has modified the session's application description using SetApplicationDesc()
+ *
+ * DWORD   - DPN_APPLICATION_DESC.dwMaxPlayers
+ * WSTRING - DPN_APPLICATION_DESC.pwszSessionName
+ * WSTRING - DPN_APPLICATION_DESC.pwszPassword
+ * DATA    - DPN_APPLICATION_DESC.pvApplicationReservedData
 */
 
 #endif /* !DPLITE_MESSAGES_HPP */
