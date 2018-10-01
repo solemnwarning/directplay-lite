@@ -17,6 +17,7 @@ SET CPP_OBJS=^
  src/EventObject.obj^
  src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
+ src/Log.obj^
  src/network.obj^
  src/packet.obj^
  src/SendQueue.obj^
@@ -45,6 +46,7 @@ SET TEST_OBJS=^
  src/EventObject.obj^
  src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
+ src/Log.obj^
  src/network.obj^
  src/packet.obj^
  src/SendQueue.obj^
@@ -72,6 +74,7 @@ SET HOOK_OBJS=^
  src/EventObject.obj^
  src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
+ src/Log.obj^
  src/network.obj^
  src/packet.obj^
  src/SendQueue.obj

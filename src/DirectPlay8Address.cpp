@@ -7,9 +7,10 @@
 #include <windows.h>
 
 #include "DirectPlay8Address.hpp"
+#include "Log.hpp"
 
 #define UNIMPLEMENTED(fmt, ...) \
-	fprintf(stderr, "Unimplemented method: " fmt "\n", ## __VA_ARGS__); \
+	log_printf("Unimplemented method: " fmt, ## __VA_ARGS__); \
 	return E_NOTIMPL;
 
 DirectPlay8Address::DirectPlay8Address(std::atomic<unsigned int> *global_refcount):

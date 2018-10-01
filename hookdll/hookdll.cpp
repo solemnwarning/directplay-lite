@@ -7,6 +7,7 @@
 #include "../src/DirectPlay8Address.hpp"
 #include "../src/DirectPlay8Peer.hpp"
 #include "../src/Factory.hpp"
+#include "../src/Log.hpp"
 
 static HMODULE dll_handle = NULL;
 static unsigned int coinit_depth = 0;
@@ -55,6 +56,8 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvRe
 			/* TODO: LOG ME */
 			abort();
 		}
+		
+		log_fini();
 	}
 	
 	return TRUE;
