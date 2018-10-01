@@ -151,7 +151,11 @@ struct SessionHost
 			[](DWORD dwMessageType, PVOID pMessage)
 			{
 				return DPN_OK;
-			}):
+			},
+		DWORD max_players = 0,
+		const wchar_t *password = NULL,
+		const void *appdata = NULL,
+		size_t appdata_size = 0):
 		cb(cb)
 	{
 		if(dp8p->Initialize(&(this->cb), &callback_shim, 0) != S_OK)
@@ -165,7 +169,17 @@ struct SessionHost
 			
 			app_desc.dwSize = sizeof(app_desc);
 			app_desc.guidApplication = application_guid;
+			app_desc.dwMaxPlayers    = max_players;
 			app_desc.pwszSessionName = (wchar_t*)(session_description);
+			
+			if(password != NULL)
+			{
+				app_desc.pwszPassword = (wchar_t*)(password);
+				app_desc.dwFlags |= DPNSESSION_REQUIREPASSWORD;
+			}
+			
+			app_desc.pvApplicationReservedData     = (void*)(appdata);
+			app_desc.dwApplicationReservedDataSize = appdata_size;
 			
 			IDP8AddressInstance addr;
 			
@@ -1615,6 +1629,302 @@ TEST(DirectPlay8Peer, ConnectAsyncFail)
 	Sleep(5000);
 	
 	EXPECT_EQ(p1_seq, 1);
+}
+
+TEST(DirectPlay8Peer, GetApplicationDesc)
+{
+	const unsigned char APP_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			return DPN_OK;
+		},
+		10,
+		NULL,
+		APP_DATA,
+		sizeof(APP_DATA));
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[](DWORD dwMessageType, PVOID pMessage)
+		{
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Host GetApplicationDesc() */
+	
+	DWORD h_appdesc_size = 0;
+	ASSERT_EQ(host->GetApplicationDesc(NULL, &h_appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+	
+	ASSERT_TRUE(h_appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+	
+	std::vector<unsigned char> h_appdesc_buf(h_appdesc_size);
+	DPN_APPLICATION_DESC *h_appdesc = (DPN_APPLICATION_DESC*)(h_appdesc_buf.data());
+	
+	memset(h_appdesc, 0xFF, h_appdesc_size);
+	h_appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+	
+	/* Instance GUID should be random, so we just check our initial value got overwritten. */
+	GUID orig_guid = h_appdesc->guidInstance;
+	
+	DWORD h_appdesc_small = h_appdesc_size - 1;
+	ASSERT_EQ(host->GetApplicationDesc(h_appdesc, &h_appdesc_small, 0), DPNERR_BUFFERTOOSMALL);
+	
+	ASSERT_EQ(host->GetApplicationDesc(h_appdesc, &h_appdesc_size, 0), S_OK);
+	
+	EXPECT_EQ((h_appdesc->dwFlags & DPNSESSION_REQUIREPASSWORD), 0);
+	EXPECT_NE(h_appdesc->guidInstance, orig_guid);
+	EXPECT_EQ(h_appdesc->guidApplication, APP_GUID_1);
+	EXPECT_EQ(h_appdesc->dwMaxPlayers, 10);
+	EXPECT_EQ(h_appdesc->dwCurrentPlayers, 2);
+	EXPECT_EQ(std::wstring(h_appdesc->pwszSessionName), std::wstring(L"Session 1"));
+	EXPECT_EQ(h_appdesc->pwszPassword, (WCHAR*)(NULL));
+	
+	EXPECT_EQ(std::string((const char*)(h_appdesc->pvApplicationReservedData), h_appdesc->dwApplicationReservedDataSize),
+		std::string((const char*)(APP_DATA), sizeof(APP_DATA)));
+	
+	/* Peer GetApplicationDesc() */
+	
+	DWORD p_appdesc_size = 0;
+	
+	ASSERT_EQ(p1->GetApplicationDesc(NULL, &p_appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+	
+	ASSERT_TRUE(p_appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+	
+	std::vector<unsigned char> p_appdesc_buf(p_appdesc_size);
+	DPN_APPLICATION_DESC *p_appdesc = (DPN_APPLICATION_DESC*)(p_appdesc_buf.data());
+	
+	p_appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+	
+	ASSERT_EQ(p1->GetApplicationDesc(p_appdesc, &p_appdesc_size, 0), S_OK);
+	
+	EXPECT_EQ((p_appdesc->dwFlags & DPNSESSION_REQUIREPASSWORD), 0);
+	EXPECT_EQ(p_appdesc->guidInstance, h_appdesc->guidInstance);
+	EXPECT_EQ(p_appdesc->guidApplication, APP_GUID_1);
+	EXPECT_EQ(p_appdesc->dwMaxPlayers, 10);
+	EXPECT_EQ(p_appdesc->dwCurrentPlayers, 2);
+	EXPECT_EQ(std::wstring(p_appdesc->pwszSessionName), std::wstring(L"Session 1"));
+	EXPECT_EQ(p_appdesc->pwszPassword, (WCHAR*)(NULL));
+	
+	EXPECT_EQ(std::string((const char*)(p_appdesc->pvApplicationReservedData), p_appdesc->dwApplicationReservedDataSize),
+		std::string((const char*)(APP_DATA), sizeof(APP_DATA)));
+}
+
+TEST(DirectPlay8Peer, SetApplicationDesc)
+{
+	const unsigned char APP_DATA[] = { 0x00, 0x01, 0x02, 0x03, 0x04 };
+	
+	std::atomic<int> h_appdesc_msg_count(0);
+	IDirectPlay8Peer *host_i;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&host_i, &h_appdesc_msg_count, &APP_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_APPLICATION_DESC)
+			{
+				/* Check GetApplicationDesc() within the DPN_MSGID_APPLICATION_DESC
+				 * handler sees the new data.
+				*/
+				
+				DWORD appdesc_size = 0;
+				EXPECT_EQ(host_i->GetApplicationDesc(NULL, &appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+				
+				EXPECT_TRUE(appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+				
+				std::vector<unsigned char> appdesc_buf(appdesc_size);
+				DPN_APPLICATION_DESC *appdesc = (DPN_APPLICATION_DESC*)(appdesc_buf.data());
+				
+				appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+				
+				EXPECT_EQ(host_i->GetApplicationDesc(appdesc, &appdesc_size, 0), S_OK);
+				
+				EXPECT_EQ((appdesc->dwFlags & DPNSESSION_REQUIREPASSWORD), DPNSESSION_REQUIREPASSWORD);
+				EXPECT_EQ(appdesc->dwMaxPlayers, 20);
+				EXPECT_EQ(std::wstring(appdesc->pwszSessionName), std::wstring(L"Best Session"));
+				EXPECT_EQ(std::wstring(appdesc->pwszPassword),    std::wstring(L"P4ssword"));
+				
+				EXPECT_EQ(std::string((const char*)(appdesc->pvApplicationReservedData), appdesc->dwApplicationReservedDataSize),
+					std::string((const char*)(APP_DATA), sizeof(APP_DATA)));
+				
+				++h_appdesc_msg_count;
+			}
+			
+			return DPN_OK;
+		});
+	
+	host_i = host.dp8p.instance;
+	
+	std::atomic<int> p_appdesc_msg_count(0);
+	IDirectPlay8Peer *p1_i;
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_i, &p_appdesc_msg_count, &APP_DATA]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_APPLICATION_DESC)
+			{
+				/* Check GetApplicationDesc() within the DPN_MSGID_APPLICATION_DESC
+				 * handler sees the new data.
+				*/
+				
+				DWORD appdesc_size = 0;
+				
+				EXPECT_EQ(p1_i->GetApplicationDesc(NULL, &appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+				
+				EXPECT_TRUE(appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+				
+				std::vector<unsigned char> appdesc_buf(appdesc_size);
+				DPN_APPLICATION_DESC *appdesc = (DPN_APPLICATION_DESC*)(appdesc_buf.data());
+				
+				appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+				
+				EXPECT_EQ(p1_i->GetApplicationDesc(appdesc, &appdesc_size, 0), S_OK);
+				
+				EXPECT_EQ((appdesc->dwFlags & DPNSESSION_REQUIREPASSWORD), DPNSESSION_REQUIREPASSWORD);
+				EXPECT_EQ(appdesc->dwMaxPlayers, 20);
+				EXPECT_EQ(std::wstring(appdesc->pwszSessionName), std::wstring(L"Best Session"));
+				EXPECT_EQ(std::wstring(appdesc->pwszPassword),    std::wstring(L"P4ssword"));
+				
+				EXPECT_EQ(std::string((const char*)(appdesc->pvApplicationReservedData), appdesc->dwApplicationReservedDataSize),
+					std::string((const char*)(APP_DATA), sizeof(APP_DATA)));
+					
+				++p_appdesc_msg_count;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	p1_i = p1.instance;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* SetApplicationDesc() */
+	
+	{
+		DWORD appdesc_size = 0;
+		ASSERT_EQ(host->GetApplicationDesc(NULL, &appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+		
+		ASSERT_TRUE(appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+		
+		std::vector<unsigned char> appdesc_buf(appdesc_size);
+		DPN_APPLICATION_DESC *appdesc = (DPN_APPLICATION_DESC*)(appdesc_buf.data());
+		
+		appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+		
+		ASSERT_EQ(host->GetApplicationDesc(appdesc, &appdesc_size, 0), S_OK);
+		
+		appdesc->dwMaxPlayers = 20;
+		appdesc->pwszSessionName = L"Best Session";
+		
+		appdesc->dwFlags |= DPNSESSION_REQUIREPASSWORD;
+		appdesc->pwszPassword = L"P4ssword";
+		
+		appdesc->pvApplicationReservedData     = (void*)(APP_DATA);
+		appdesc->dwApplicationReservedDataSize = sizeof(APP_DATA);
+		
+		ASSERT_EQ(host->SetApplicationDesc(appdesc, 0), S_OK);
+	}
+	
+	Sleep(250);
+	
+	EXPECT_EQ(h_appdesc_msg_count, 1);
+	EXPECT_EQ(p_appdesc_msg_count, 1);
+	
+	/* Host GetApplicationDesc() */
+	
+	DWORD h_appdesc_size = 0;
+	ASSERT_EQ(host->GetApplicationDesc(NULL, &h_appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+	
+	ASSERT_TRUE(h_appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+	
+	std::vector<unsigned char> h_appdesc_buf(h_appdesc_size);
+	DPN_APPLICATION_DESC *h_appdesc = (DPN_APPLICATION_DESC*)(h_appdesc_buf.data());
+	
+	h_appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+	
+	ASSERT_EQ(host->GetApplicationDesc(h_appdesc, &h_appdesc_size, 0), S_OK);
+	
+	EXPECT_EQ((h_appdesc->dwFlags & DPNSESSION_REQUIREPASSWORD), DPNSESSION_REQUIREPASSWORD);
+	EXPECT_EQ(h_appdesc->dwMaxPlayers, 20);
+	EXPECT_EQ(std::wstring(h_appdesc->pwszSessionName), std::wstring(L"Best Session"));
+	EXPECT_EQ(std::wstring(h_appdesc->pwszPassword),    std::wstring(L"P4ssword"));
+	
+	EXPECT_EQ(std::string((const char*)(h_appdesc->pvApplicationReservedData), h_appdesc->dwApplicationReservedDataSize),
+		std::string((const char*)(APP_DATA), sizeof(APP_DATA)));
+	
+	/* Peer GetApplicationDesc() */
+	
+	DWORD p_appdesc_size = 0;
+	
+	ASSERT_EQ(p1->GetApplicationDesc(NULL, &p_appdesc_size, 0), DPNERR_BUFFERTOOSMALL);
+	
+	ASSERT_TRUE(p_appdesc_size >= sizeof(DPN_APPLICATION_DESC));
+	
+	std::vector<unsigned char> p_appdesc_buf(p_appdesc_size);
+	DPN_APPLICATION_DESC *p_appdesc = (DPN_APPLICATION_DESC*)(p_appdesc_buf.data());
+	
+	p_appdesc->dwSize = sizeof(DPN_APPLICATION_DESC);
+	
+	ASSERT_EQ(p1->GetApplicationDesc(p_appdesc, &p_appdesc_size, 0), S_OK);
+	
+	EXPECT_EQ((p_appdesc->dwFlags & DPNSESSION_REQUIREPASSWORD), DPNSESSION_REQUIREPASSWORD);
+	EXPECT_EQ(p_appdesc->dwMaxPlayers, 20);
+	EXPECT_EQ(std::wstring(p_appdesc->pwszSessionName), std::wstring(L"Best Session"));
+	EXPECT_EQ(std::wstring(p_appdesc->pwszPassword),    std::wstring(L"P4ssword"));
+	
+	EXPECT_EQ(std::string((const char*)(p_appdesc->pvApplicationReservedData), p_appdesc->dwApplicationReservedDataSize),
+		std::string((const char*)(APP_DATA), sizeof(APP_DATA)));
 }
 
 TEST(DirectPlay8Peer, AsyncSendToPeerToHost)

@@ -831,6 +831,7 @@ HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDesc
 	}
 	
 	DWORD required_size = sizeof(DPN_APPLICATION_DESC)
+		+ (session_name.length() + 1) * sizeof(wchar_t)
 		+ (password.length() + !password.empty()) * sizeof(wchar_t)
 		+ application_data.size();
 	
@@ -848,6 +849,10 @@ HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDesc
 		pAppDescBuffer->guidApplication  = application_guid;
 		pAppDescBuffer->dwMaxPlayers     = max_players;
 		pAppDescBuffer->dwCurrentPlayers = player_to_peer_id.size() + 1;
+		
+		wcscpy((wchar_t*)(extra_at), session_name.c_str());
+		pAppDescBuffer->pwszSessionName = (wchar_t*)(extra_at);
+		extra_at += (session_name.length() + 1) * sizeof(wchar_t);
 		
 		if(!password.empty())
 		{
@@ -882,7 +887,7 @@ HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDesc
 		return S_OK;
 	}
 	else{
-		*pcbDataSize = sizeof(*pAppDescBuffer);
+		*pcbDataSize = required_size;
 		return DPNERR_BUFFERTOOSMALL;
 	}
 }
@@ -945,6 +950,13 @@ HRESULT DirectPlay8Peer::SetApplicationDesc(CONST DPN_APPLICATION_DESC* CONST pa
 		pi->second->sq.send(SendQueue::SEND_PRI_MEDIUM, appdesc, NULL,
 			[](std::unique_lock<std::mutex> &l, HRESULT result) {});
 	}
+	
+	/* And finally, notify ourself about it.
+	 * TODO: Should this block the calling thread?
+	*/
+	
+	l.unlock();
+	message_handler(message_handler_ctx, DPN_MSGID_APPLICATION_DESC, NULL);
 	
 	return S_OK;
 }
