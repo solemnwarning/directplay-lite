@@ -1,7 +1,9 @@
 #include <algorithm>
 #include <memory>
+#include <stdio.h>
 #include <ws2tcpip.h>
 
+#include "COMAPIException.hpp"
 #include "DirectPlay8Address.hpp"
 #include "HostEnumerator.hpp"
 #include "Messages.hpp"
@@ -35,12 +37,87 @@ HostEnumerator::HostEnumerator(
 	next_tx_at(0),
 	req_cancel(false)
 {
-	/* TODO: Use address in pdpaddrHost, if provided. */
+	if(pdpaddrDeviceInfo == NULL)
+	{
+		throw COMAPIException(DPNERR_INVALIDPARAM);
+	}
+	
+	if(pdpaddrDeviceInfo->GetSP(&service_provider) != S_OK)
+	{
+		throw COMAPIException(DPNERR_INVALIDDEVICEADDRESS);
+	}
 	
 	memset(&send_addr, 0, sizeof(send_addr));
 	send_addr.sin_family      = AF_INET;
 	send_addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
 	send_addr.sin_port        = htons(DISCOVERY_PORT);
+	
+	if(pdpaddrHost != NULL)
+	{
+		GUID host_sp;
+		if(pdpaddrHost->GetSP(&host_sp) != S_OK)
+		{
+			throw COMAPIException(DPNERR_INVALIDHOSTADDRESS);
+		}
+		
+		if(host_sp != service_provider)
+		{
+			/* Service Provider in host address must match device address. */
+			throw COMAPIException(DPNERR_INVALIDPARAM);
+		}
+		
+		/* Hostname component overrides discovery address, if provided. */
+		
+		wchar_t hostname_value[128];
+		DWORD hostname_size = sizeof(hostname_value);
+		DWORD hostname_type;
+		
+		if(pdpaddrHost->GetComponentByName(DPNA_KEY_HOSTNAME, hostname_value, &hostname_size, &hostname_type) == S_OK)
+		{
+			if(hostname_type != DPNA_DATATYPE_STRING)
+			{
+				throw COMAPIException(DPNERR_INVALIDHOSTADDRESS);
+			}
+			
+			if(host_sp == CLSID_DP8SP_TCPIP)
+			{
+				struct in_addr hostname_addr;
+				if(InetPtonW(AF_INET, hostname_value, &hostname_addr) == 1)
+				{
+					send_addr.sin_addr = hostname_addr;
+				}
+				else{
+					throw COMAPIException(DPNERR_INVALIDHOSTADDRESS);
+				}
+			}
+			else if(host_sp == CLSID_DP8SP_IPX)
+			{
+				unsigned ip;
+				if(swscanf(hostname_value, L"00000000,0000%08X", &ip) != 1)
+				{
+					throw COMAPIException(DPNERR_INVALIDHOSTADDRESS);
+				}
+				
+				send_addr.sin_addr.s_addr = htonl(ip);
+			}
+		}
+		
+		/* Port component overrides discovery port, if provided. */
+		
+		DWORD port_value;
+		DWORD port_size = sizeof(port_value);
+		DWORD port_type;
+		
+		if(pdpaddrHost->GetComponentByName(DPNA_KEY_PORT, &port_value, &port_size, &port_type) == S_OK)
+		{
+			if(port_type != DPNA_DATATYPE_DWORD || port_value > 65535)
+			{
+				throw COMAPIException(DPNERR_INVALIDHOSTADDRESS);
+			}
+			
+			send_addr.sin_port = htons(port_value);
+		}
+	}
 	
 	if(pApplicationDesc != NULL)
 	{
@@ -248,26 +325,15 @@ void HostEnumerator::handle_packet(const void *data, size_t size, struct sockadd
 	 * port for the host.
 	*/
 	
-	IDirectPlay8Address *sender_address = new DirectPlay8Address(global_refcount);
-	sender_address->SetSP(&CLSID_DP8SP_TCPIP); /* TODO: Be IPX if application previously gave us an IPX address? */
-	
-	char from_addr_ip_s[16];
-	inet_ntop(AF_INET, &(from_addr->sin_addr), from_addr_ip_s, sizeof(from_addr_ip_s));
-	
-	sender_address->AddComponent(DPNA_KEY_HOSTNAME,
-		from_addr_ip_s, strlen(from_addr_ip_s) + 1, DPNA_DATATYPE_STRING_ANSI);
-	
-	DWORD from_port_dw = ntohs(from_addr->sin_port);
-	
-	sender_address->AddComponent(DPNA_KEY_PORT,
-		&from_port_dw, sizeof(from_port_dw), DPNA_DATATYPE_DWORD);
+	IDirectPlay8Address *sender_address = DirectPlay8Address::create_host_address(
+		global_refcount, service_provider, (struct sockaddr*)(from_addr));
 	
 	/* Build a DirectPlay8Address with the interface we received the response on.
 	 * TODO: Actually do this.
 	*/
 	
 	IDirectPlay8Address *device_address = new DirectPlay8Address(global_refcount);
-	device_address->SetSP(&CLSID_DP8SP_TCPIP); /* TODO: Be IPX if application previously gave us an IPX address? */
+	device_address->SetSP(&service_provider);
 	
 	DPNMSG_ENUM_HOSTS_RESPONSE message;
 	memset(&message, 0, sizeof(message));

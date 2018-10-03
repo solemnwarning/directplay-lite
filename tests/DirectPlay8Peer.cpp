@@ -136,7 +136,12 @@ struct SessionHost
 			app_desc.guidApplication = application_guid;
 			app_desc.pwszSessionName = (wchar_t*)(session_description);
 			
-			if(dp8p->Host(&app_desc, NULL, 0, NULL, NULL, (void*)(0xB00), 0) != S_OK)
+			IDP8AddressInstance address;
+			address->SetSP(&CLSID_DP8SP_TCPIP);
+			
+			IDirectPlay8Address *addresses[] = { address };
+			
+			if(dp8p->Host(&app_desc, addresses, 1, NULL, NULL, (void*)(0xB00), 0) != S_OK)
 			{
 				throw std::runtime_error("DirectPlay8Peer::Host failed");
 			}
@@ -338,12 +343,15 @@ TEST(DirectPlay8Peer, EnumHostsSync)
 	
 	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	DWORD start = GetTickCount();
 	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -423,12 +431,15 @@ TEST(DirectPlay8Peer, EnumHostsAsync)
 	
 	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	DWORD start = GetTickCount();
 	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -492,12 +503,15 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelByHandle)
 	
 	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	DWORD start = GetTickCount();
 	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -555,12 +569,15 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelAllEnums)
 	
 	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	DWORD start = GetTickCount();
 	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -618,12 +635,15 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelAllOperations)
 	
 	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	DWORD start = GetTickCount();
 	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -681,12 +701,15 @@ TEST(DirectPlay8Peer, EnumHostsAsyncCancelByClose)
 	
 	ASSERT_EQ(client->Initialize(&callback, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	DWORD start = GetTickCount();
 	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -794,10 +817,13 @@ TEST(DirectPlay8Peer, EnumHostsFilterByApplicationGUID)
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_2;
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	ASSERT_EQ(client->EnumHosts(
 		&app_desc,         /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -857,10 +883,13 @@ TEST(DirectPlay8Peer, EnumHostsFilterByNULLApplicationGUID)
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = GUID_NULL;
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	ASSERT_EQ(client->EnumHosts(
 		&app_desc,         /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -939,10 +968,13 @@ TEST(DirectPlay8Peer, EnumHostsDataInQuery)
 	
 	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		(void*)(DATA),     /* pvUserEnumData */
 		sizeof(DATA),      /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -1036,10 +1068,13 @@ TEST(DirectPlay8Peer, EnumHostsDataInResponse)
 	
 	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
 	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
 	ASSERT_EQ(client->EnumHosts(
 		NULL,              /* pApplicationDesc */
 		NULL,              /* pdpaddrHost */
-		NULL,              /* pdpaddrDeviceInfo */
+		device_address,    /* pdpaddrDeviceInfo */
 		NULL,              /* pvUserEnumData */
 		0,                 /* dwUserEnumDataSize */
 		3,                 /* dwEnumCount */
@@ -1059,7 +1094,60 @@ TEST(DirectPlay8Peer, EnumHostsDataInResponse)
 	EXPECT_TRUE(got_return_buffer);
 }
 
-/* TODO: Test enumerating a session directly. */
+TEST(DirectPlay8Peer, EnumHostsSpecifyPort)
+{
+	SessionHost a1s1(APP_GUID_1, L"Application 1 Session 1", PORT);
+	SessionHost a1s2(APP_GUID_1, L"Application 1 Session 2", PORT + 1);
+	
+	std::map<GUID, FoundSession, CompareGUID> sessions;
+	
+	std::function<HRESULT(DWORD,PVOID)> client_cb =
+		[&sessions]
+		(DWORD dwMessageType, PVOID pMessage)
+	{
+		if(dwMessageType == DPN_MSGID_ENUM_HOSTS_RESPONSE)
+		{
+			DPNMSG_ENUM_HOSTS_RESPONSE *ehr = (DPNMSG_ENUM_HOSTS_RESPONSE*)(pMessage);
+			
+			sessions.emplace(
+				ehr->pApplicationDescription->guidInstance,
+				FoundSession(
+					ehr->pApplicationDescription->guidApplication,
+					ehr->pApplicationDescription->pwszSessionName));
+		}
+		
+		return DPN_OK;
+	};
+	
+	IDP8PeerInstance client;
+	
+	ASSERT_EQ(client->Initialize(&client_cb, &callback_shim, 0), S_OK);
+	
+	IDP8AddressInstance host_address(L"127.0.0.1", PORT);
+	
+	IDP8AddressInstance device_address;
+	device_address->SetSP(&CLSID_DP8SP_TCPIP);
+	
+	ASSERT_EQ(client->EnumHosts(
+		NULL,              /* pApplicationDesc */
+		host_address,      /* pdpaddrHost */
+		device_address,    /* pdpaddrDeviceInfo */
+		NULL,              /* pvUserEnumData */
+		0,                 /* dwUserEnumDataSize */
+		3,                 /* dwEnumCount */
+		500,               /* dwRetryInterval */
+		500,               /* dwTimeOut*/
+		NULL,              /* pvUserContext */
+		NULL,              /* pAsyncHandle */
+		DPNENUMHOSTS_SYNC  /* dwFlags */
+	), S_OK);
+	
+	FoundSession expect_sessions[] = {
+		FoundSession(APP_GUID_1, L"Application 1 Session 1"),
+	};
+	
+	EXPECT_SESSIONS(sessions, expect_sessions, expect_sessions + 1);
+}
 
 TEST(DirectPlay8Peer, ConnectSync)
 {

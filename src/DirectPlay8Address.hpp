@@ -1,6 +1,7 @@
 #ifndef DPLITE_DIRECTPLAY8ADDRESS_HPP
 #define DPLITE_DIRECTPLAY8ADDRESS_HPP
 
+#include <winsock2.h>
 #include <atomic>
 #include <dplay8.h>
 #include <objbase.h>
@@ -68,6 +69,8 @@ class DirectPlay8Address: public IDirectPlay8Address
 		DirectPlay8Address(std::atomic<unsigned int> *global_refcount);
 		DirectPlay8Address(const DirectPlay8Address &src);
 		virtual ~DirectPlay8Address();
+		
+		static DirectPlay8Address *create_host_address(std::atomic<unsigned int> *global_refcount, GUID service_provider, const struct sockaddr *sa);
 		
 		/* IUnknown */
 		virtual HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void **ppvObject) override;

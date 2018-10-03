@@ -1,3 +1,5 @@
+#include <winsock2.h>
+#include <assert.h>
 #include <atomic>
 #include <dplay8.h>
 #include <objbase.h>
@@ -5,6 +7,7 @@
 #include <string.h>
 #include <wchar.h>
 #include <windows.h>
+#include <ws2tcpip.h>
 
 #include "DirectPlay8Address.hpp"
 #include "Log.hpp"
@@ -32,6 +35,55 @@ DirectPlay8Address::DirectPlay8Address(const DirectPlay8Address &src):
 DirectPlay8Address::~DirectPlay8Address()
 {
 	clear_components();
+}
+
+/* Construct a DirectPlay8Address which represents a host address.
+ *
+ * service_provider must be CLSID_DP8SP_TCPIP or CLSID_DP8SP_IPX.
+ * sa must be an IPv4 address with a valid IP and port.
+*/
+DirectPlay8Address *DirectPlay8Address::create_host_address(std::atomic<unsigned int> *global_refcount, GUID service_provider, const struct sockaddr *sa)
+{
+	assert(service_provider == CLSID_DP8SP_TCPIP || service_provider == CLSID_DP8SP_IPX);
+	assert(sa->sa_family == AF_INET);
+	
+	const struct sockaddr_in *sa_v4 = (const struct sockaddr_in*)(sa);
+	
+	DirectPlay8Address *address = new DirectPlay8Address(global_refcount);
+	address->SetSP(&service_provider);
+	
+	if(service_provider == CLSID_DP8SP_TCPIP)
+	{
+		/* TCP/IP service provider, just stick the IP in the hostname field. */
+		
+		char hostname[16];
+		inet_ntop(AF_INET, &(sa_v4->sin_addr), hostname, sizeof(hostname));
+		
+		address->AddComponent(DPNA_KEY_HOSTNAME,
+			hostname, strlen(hostname) + 1, DPNA_DATATYPE_STRING_ANSI);
+	}
+	else if(service_provider == CLSID_DP8SP_IPX)
+	{
+		/* IPX service provider.
+		 *
+		 * Network address is all zeros.
+		 * Host address is IP address preceeded by two zero bytes.
+		*/
+		
+		uint32_t ipaddr_he = ntohl(sa_v4->sin_addr.s_addr);
+		
+		char hostname[32];
+		snprintf(hostname, sizeof(hostname), "00000000,0000%08X", (unsigned)(ipaddr_he));
+		
+		address->AddComponent(DPNA_KEY_HOSTNAME,
+			hostname, strlen(hostname) + 1, DPNA_DATATYPE_STRING_ANSI);
+	}
+	
+	DWORD port_dw = ntohs(sa_v4->sin_port);
+	
+	address->AddComponent(DPNA_KEY_PORT, &port_dw, sizeof(port_dw), DPNA_DATATYPE_DWORD);
+	
+	return address;
 }
 
 void DirectPlay8Address::clear_components()

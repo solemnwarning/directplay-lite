@@ -29,6 +29,7 @@ class HostEnumerator
 		
 		std::function<void(HRESULT)> complete_cb;
 		
+		GUID service_provider;
 		struct sockaddr_in send_addr;
 		
 		GUID application_guid;                 /* GUID of application to search for, or GUID_NULL */

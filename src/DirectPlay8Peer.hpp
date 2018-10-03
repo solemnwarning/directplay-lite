@@ -47,6 +47,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		std::wstring password;
 		std::vector<unsigned char> application_data;
 		
+		GUID service_provider;
+		
 		/* Local IP and port for all our sockets, except discovery_socket. */
 		uint32_t local_ip;
 		uint16_t local_port;

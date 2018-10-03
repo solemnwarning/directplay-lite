@@ -672,6 +672,11 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 		/* Not supported yet. */
 	}
 	
+	if(cDeviceInfo == 0)
+	{
+		return DPNERR_INVALIDPARAM;
+	}
+	
 	/* Generate a random GUID for this session. */
 	HRESULT guid_err = CoCreateGuid(&instance_guid);
 	if(guid_err != S_OK)
@@ -700,12 +705,33 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 			(unsigned char*)(pdnAppDesc->pvApplicationReservedData) + pdnAppDesc->dwApplicationReservedDataSize);
 	}
 	
+	GUID     sp     = GUID_NULL;
 	uint32_t ipaddr = htonl(INADDR_ANY);
 	uint16_t port   = 0;
 	
 	for(DWORD i = 0; i < cDeviceInfo; ++i)
 	{
 		DirectPlay8Address *addr = (DirectPlay8Address*)(prgpDeviceInfo[i]);
+		
+		GUID this_sp;
+		if(addr->GetSP(&this_sp) != S_OK)
+		{
+			return DPNERR_INVALIDDEVICEADDRESS;
+		}
+		
+		if(sp != GUID_NULL && this_sp != sp)
+		{
+			/* Multiple service providers specified, don't support this yet. */
+			return E_NOTIMPL;
+		}
+		
+		if(this_sp != CLSID_DP8SP_TCPIP && this_sp != CLSID_DP8SP_IPX)
+		{
+			/* Only support TCP/IP and IPX addresses at this time. */
+			return DPNERR_INVALIDDEVICEADDRESS;
+		}
+		
+		sp = this_sp;
 		
 		DWORD addr_port_value;
 		DWORD addr_port_size = sizeof(addr_port_value);
@@ -724,6 +750,8 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 			}
 		}
 	}
+	
+	service_provider = sp;
 	
 	if(port == 0)
 	{
@@ -1274,7 +1302,22 @@ HRESULT DirectPlay8Peer::GetPeerInfo(CONST DPNID dpnid, DPN_PLAYER_INFO* CONST p
 
 HRESULT DirectPlay8Peer::GetPeerAddress(CONST DPNID dpnid, IDirectPlay8Address** CONST pAddress, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::GetPeerAddress");
+	std::unique_lock<std::mutex> l(lock);
+	
+	Peer *peer = get_peer_by_player_id(dpnid);
+	if(peer == NULL)
+	{
+		return DPNERR_INVALIDPLAYER;
+	}
+	
+	struct sockaddr_in sa;
+	sa.sin_family      = AF_INET;
+	sa.sin_addr.s_addr = peer->ip;
+	sa.sin_port        = htons(peer->port);
+	
+	*pAddress = DirectPlay8Address::create_host_address(global_refcount, service_provider, (struct sockaddr*)(&sa));
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::GetLocalHostAddresses(IDirectPlay8Address** CONST prgpAddress, DWORD* CONST pcAddress, CONST DWORD dwFlags)
@@ -2245,8 +2288,11 @@ void DirectPlay8Peer::handle_host_enum_request(std::unique_lock<std::mutex> &l, 
 	DPNMSG_ENUM_HOSTS_QUERY ehq;
 	memset(&ehq, 0, sizeof(ehq));
 	
+	DirectPlay8Address *sender_address = DirectPlay8Address::create_host_address(
+		global_refcount, service_provider, (struct sockaddr*)(from_addr));
+	
 	ehq.dwSize = sizeof(ehq);
-	ehq.pAddressSender = NULL; // TODO
+	ehq.pAddressSender = sender_address;
 	ehq.pAddressDevice = NULL; // TODO
 	
 	if(!pd.is_null(1))
@@ -2264,6 +2310,8 @@ void DirectPlay8Peer::handle_host_enum_request(std::unique_lock<std::mutex> &l, 
 	l.unlock();
 	HRESULT ehq_result = message_handler(message_handler_ctx, DPN_MSGID_ENUM_HOSTS_QUERY, &ehq);
 	l.lock();
+	
+	sender_address->Release();
 	
 	std::vector<unsigned char> response_data_buffer;
 	if(ehq.dwResponseDataSize > 0)
@@ -2413,7 +2461,15 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 		ic.dwUserConnectDataSize = d.second;
 	}
 	
-	ic.pAddressPlayer = NULL; /* TODO */
+	struct sockaddr_in peer_sa;
+	peer_sa.sin_family      = AF_INET;
+	peer_sa.sin_addr.s_addr = peer->ip;
+	peer_sa.sin_port        = htons(peer->port);
+	
+	DirectPlay8Address *peer_address = DirectPlay8Address::create_host_address(
+		global_refcount, service_provider, (struct sockaddr*)(&peer_sa));
+	
+	ic.pAddressPlayer = peer_address;
 	ic.pAddressDevice = NULL; /* TODO */
 	
 	peer->state = Peer::PS_INDICATING;
@@ -2421,6 +2477,8 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 	l.unlock();
 	HRESULT ic_result = message_handler(message_handler_ctx, DPN_MSGID_INDICATE_CONNECT, &ic);
 	l.lock();
+	
+	peer_address->Release();
 	
 	std::vector<unsigned char> reply_data_buffer;
 	if(ic.dwReplyDataSize > 0)
