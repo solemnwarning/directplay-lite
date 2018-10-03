@@ -279,25 +279,72 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 	
 	/* TODO: Get bind address/port from pDeviceInfo, if specified. */
 	
+	/* Extract remote IP and port from pHostAddr. */
+	
 	uint32_t r_ipaddr;
 	uint16_t r_port;
 	
+	GUID host_sp;
+	if(pHostAddr->GetSP(&host_sp) != S_OK)
 	{
-		wchar_t buf[128];
-		DWORD bsize = sizeof(buf);
-		DWORD type;
-		
-		pHostAddr->GetComponentByName(DPNA_KEY_HOSTNAME, buf, &bsize, &type);
-		InetPtonW(AF_INET, buf, &r_ipaddr);
+		return DPNERR_INVALIDHOSTADDRESS;
 	}
 	
+	wchar_t hostname_value[128];
+	DWORD hostname_size = sizeof(hostname_value);
+	DWORD hostname_type;
+	
+	if(pHostAddr->GetComponentByName(DPNA_KEY_HOSTNAME, hostname_value, &hostname_size, &hostname_type) == S_OK)
 	{
-		DWORD buf;
-		DWORD bsize = sizeof(buf);
-		DWORD type;
+		if(hostname_type != DPNA_DATATYPE_STRING)
+		{
+			return DPNERR_INVALIDHOSTADDRESS;
+		}
 		
-		pHostAddr->GetComponentByName(DPNA_KEY_PORT, &buf, &bsize, &type);
-		r_port = buf;
+		if(host_sp == CLSID_DP8SP_TCPIP)
+		{
+			struct in_addr hostname_addr;
+			if(InetPtonW(AF_INET, hostname_value, &hostname_addr) == 1)
+			{
+				r_ipaddr = hostname_addr.s_addr;
+			}
+			else{
+				return DPNERR_INVALIDHOSTADDRESS;
+			}
+		}
+		else if(host_sp == CLSID_DP8SP_IPX)
+		{
+			unsigned ip;
+			if(swscanf(hostname_value, L"00000000,0000%08X", &ip) != 1)
+			{
+				return DPNERR_INVALIDHOSTADDRESS;
+			}
+			
+			r_ipaddr = htonl(ip);
+		}
+		else{
+			return DPNERR_INVALIDHOSTADDRESS;
+		}
+	}
+	else{
+		return DPNERR_INVALIDHOSTADDRESS;
+	}
+	
+	DWORD port_value;
+	DWORD port_size = sizeof(port_value);
+	DWORD port_type;
+	
+	if(pHostAddr->GetComponentByName(DPNA_KEY_PORT, &port_value, &port_size, &port_type) == S_OK)
+	{
+		if(port_type != DPNA_DATATYPE_DWORD || port_value > 65535)
+		{
+			return DPNERR_INVALIDHOSTADDRESS;
+		}
+		
+		r_port = port_value;
+	}
+	else{
+		return DPNERR_INVALIDHOSTADDRESS;
 	}
 	
 	if(l_port == 0)
