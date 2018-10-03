@@ -1704,8 +1704,16 @@ void DirectPlay8Peer::handle_udp_socket_event()
 			}
 			
 			default:
-				/* TODO: Log "unrecognised packet type" */
+			{
+				char s_ip[16];
+				inet_ntop(AF_INET, &(from_addr.sin_addr), s_ip, sizeof(s_ip));
+				
+				log_printf(
+					"Unexpected message type %u received on udp_socket from %s",
+					(unsigned)(pd->packet_type()), s_ip);
+				
 				break;
+			}
 		}
 	}
 	
@@ -1747,7 +1755,13 @@ void DirectPlay8Peer::handle_other_socket_event()
 				}
 				
 				default:
-					/* TODO: Log "unrecognised packet type" */
+					char s_ip[16];
+					inet_ntop(AF_INET, &(from_addr.sin_addr), s_ip, sizeof(s_ip));
+					
+					log_printf(
+						"Unexpected message type %u received on discovery_socket from %s",
+						(unsigned)(pd->packet_type()), s_ip);
+					
 					break;
 			}
 		}
@@ -2063,7 +2077,7 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 					
 					default:
 						log_printf(
-							"Unexpected message type %u received from peer %u\n",
+							"Unexpected message type %u received from peer %u",
 							(unsigned)(pd->packet_type()), peer_id);
 						break;
 				}
@@ -2119,6 +2133,8 @@ void DirectPlay8Peer::peer_accept(std::unique_lock<std::mutex> &l)
 	u_long non_blocking = 1;
 	if(ioctlsocket(newfd, FIONBIO, &non_blocking) != 0)
 	{
+		log_printf("ioctlsocket() failed, dropping peer");
+		
 		closesocket(newfd);
 		return;
 	}
@@ -2126,12 +2142,17 @@ void DirectPlay8Peer::peer_accept(std::unique_lock<std::mutex> &l)
 	unsigned int peer_id = next_peer_id++;
 	Peer *peer = new Peer(Peer::PS_ACCEPTED, newfd, addr.sin_addr.s_addr, ntohs(addr.sin_port));
 	
-	peers.insert(std::make_pair(peer_id, peer));
-	
 	if(WSAEventSelect(peer->sock, peer->event, FD_READ | FD_WRITE | FD_CLOSE) != 0)
 	{
-		/* TODO */
+		log_printf("WSAEventSelect() failed, dropping peer");
+		
+		closesocket(peer->sock);
+		delete peer;
+		
+		return;
 	}
+	
+	peers.insert(std::make_pair(peer_id, peer));
 	
 	worker_pool.add_handle(peer->event, [this, peer_id]() { io_peer_triggered(peer_id); });
 }
@@ -2387,7 +2408,7 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 	
 	if(peer->state != Peer::PS_ACCEPTED)
 	{
-		log_printf("Received unexpected DPLITE_MSGID_CONNECT_HOST from peer %u, in state %u\n",
+		log_printf("Received unexpected DPLITE_MSGID_CONNECT_HOST from peer %u, in state %u",
 			peer_id, (unsigned)(peer->state));
 		return;
 	}
@@ -2697,7 +2718,7 @@ void DirectPlay8Peer::handle_host_connect_fail(std::unique_lock<std::mutex> &l, 
 	
 	if(peer->state != Peer::PS_REQUESTING_HOST)
 	{
-		log_printf("Received unexpected DPLITE_MSGID_CONNECT_HOST_FAIL from peer %u, in state %u\n",
+		log_printf("Received unexpected DPLITE_MSGID_CONNECT_HOST_FAIL from peer %u, in state %u",
 			peer_id, (unsigned)(peer->state));
 		return;
 	}
@@ -2724,7 +2745,7 @@ void DirectPlay8Peer::handle_host_connect_fail(std::unique_lock<std::mutex> &l, 
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
-		log_printf("Received invalid DPLITE_MSGID_CONNECT_HOST_FAIL from peer %u: %s\n",
+		log_printf("Received invalid DPLITE_MSGID_CONNECT_HOST_FAIL from peer %u: %s",
 			peer_id, e.what());
 	}
 	
@@ -2772,7 +2793,7 @@ void DirectPlay8Peer::handle_message(std::unique_lock<std::mutex> &l, const Pack
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
-		log_printf("Received invalid DPLITE_MSGID_MESSAGE: %s\n", e.what());
+		log_printf("Received invalid DPLITE_MSGID_MESSAGE: %s", e.what());
 	}
 }
 
@@ -2824,7 +2845,7 @@ void DirectPlay8Peer::handle_playerinfo(std::unique_lock<std::mutex> &l, unsigne
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
-		log_printf("Received invalid DPLITE_MSGID_PLAYERINFO from peer %u: %s\n",
+		log_printf("Received invalid DPLITE_MSGID_PLAYERINFO from peer %u: %s",
 			peer_id, e.what());
 	}
 }
@@ -2841,7 +2862,7 @@ void DirectPlay8Peer::handle_ack(std::unique_lock<std::mutex> &l, unsigned int p
 		auto ai = peer->pending_acks.find(ack_id);
 		if(ai == peer->pending_acks.end())
 		{
-			log_printf("Received DPLITE_MSGID_CONNECT_HOST_FAIL with unknown ID %u from peer %u: %s\n",
+			log_printf("Received DPLITE_MSGID_CONNECT_HOST_FAIL with unknown ID %u from peer %u: %s",
 				(unsigned)(ack_id), peer_id);
 			return;
 		}
@@ -2853,7 +2874,7 @@ void DirectPlay8Peer::handle_ack(std::unique_lock<std::mutex> &l, unsigned int p
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
-		log_printf("Received invalid DPLITE_MSGID_ACK from peer %u: %s\n",
+		log_printf("Received invalid DPLITE_MSGID_ACK from peer %u: %s",
 			peer_id, e.what());
 	}
 }
@@ -2871,7 +2892,7 @@ void DirectPlay8Peer::handle_appdesc(std::unique_lock<std::mutex> &l, unsigned i
 		
 		if(peer->state != Peer::PS_CONNECTED)
 		{
-			log_printf("Received unexpected DPLITE_MSGID_APPDESC from peer %u, in state %u\n",
+			log_printf("Received unexpected DPLITE_MSGID_APPDESC from peer %u, in state %u",
 				peer_id, (unsigned)(peer->state));
 			return;
 		}
@@ -2882,7 +2903,7 @@ void DirectPlay8Peer::handle_appdesc(std::unique_lock<std::mutex> &l, unsigned i
 		
 		if(peer->player_id != host_player_id)
 		{
-			log_printf("Received unexpected DPLITE_MSGID_CONNECT_HOST_FAIL from non-host peer %u\n",
+			log_printf("Received unexpected DPLITE_MSGID_CONNECT_HOST_FAIL from non-host peer %u",
 				peer_id);
 			return;
 		}
@@ -2907,7 +2928,7 @@ void DirectPlay8Peer::handle_appdesc(std::unique_lock<std::mutex> &l, unsigned i
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
-		log_printf("Received invalid DPLITE_MSGID_APPDESC from peer %u: %s\n",
+		log_printf("Received invalid DPLITE_MSGID_APPDESC from peer %u: %s",
 			peer_id, e.what());
 	}
 }
