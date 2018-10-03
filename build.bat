@@ -85,7 +85,7 @@ SET CFLAGS=^
  /Zi^
  /EHsc^
  /DNOMINMAX^
- /I"C:\Program Files (x86)\Microsoft DirectX 9.0 SDK (October 2004)\Include"^
+ /I"include"^
  /I"minhook/include"^
  /I"googletest/include"^
  /I"googletest"

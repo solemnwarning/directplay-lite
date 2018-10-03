@@ -96,7 +96,7 @@ class DirectPlay8Address: public IDirectPlay8Address
 		virtual HRESULT STDMETHODCALLTYPE AddComponent(CONST WCHAR* CONST pwszName, CONST void* CONST lpvData, CONST DWORD dwDataSize, CONST DWORD dwDataType) override;
 		virtual HRESULT STDMETHODCALLTYPE GetDevice(GUID* pDevGuid) override;
 		virtual HRESULT STDMETHODCALLTYPE SetDevice(CONST GUID* CONST devGuid) override;
-		virtual HRESULT STDMETHODCALLTYPE BuildFromDPADDRESS(LPVOID pvAddress, DWORD dwDataSize) override;
+		virtual HRESULT STDMETHODCALLTYPE BuildFromDirectPlay4Address(LPVOID pvAddress, DWORD dwDataSize) override;
 };
 
 #endif /* DPLITE_DIRECTPLAY8ADDRESS_HPP */
