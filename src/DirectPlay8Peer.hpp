@@ -182,7 +182,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int peer_id);
 		
 		void peer_accept(std::unique_lock<std::mutex> &l);
-		bool peer_connect(Peer::PeerState initial_state, uint32_t remote_ip, uint16_t remote_port);
+		bool peer_connect(Peer::PeerState initial_state, uint32_t remote_ip, uint16_t remote_port, DPNID player_id = 0);
 		void peer_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, HRESULT outstanding_op_result);
 		
 		void close_everything_now(std::unique_lock<std::mutex> &l);
@@ -191,6 +191,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_host_connect_request(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_host_connect_ok(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_host_connect_fail(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_connect_peer(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_connect_peer_ok(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_connect_peer_fail(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_message(std::unique_lock<std::mutex> &l, const PacketDeserialiser &pd);
 		void handle_playerinfo(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_ack(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);

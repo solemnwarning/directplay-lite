@@ -107,4 +107,32 @@
  * DATA    - DPN_APPLICATION_DESC.pvApplicationReservedData
 */
 
+#define DPLITE_MSGID_CONNECT_PEER 10
+
+/* Initial connect request to a follow non-host peer.
+ *
+ * GUID    - Instance GUID
+ * GUID    - Application GUID
+ * WSTRING - Password
+ * DWORD   - Player ID
+ * WSTRING - Player name (empty = none)
+ * DATA    - Player data (empty = none)
+*/
+
+#define DPLITE_MSGID_CONNECT_PEER_OK 11
+
+/* Successful response to DPLITE_MSGID_CONNECT_PEER.
+ *
+ * WSTRING - Player name (empty = none)
+ * DATA    - Player data (empty = none)
+*/
+
+#define DPLITE_MSGID_CONNECT_PEER_FAIL 12
+
+/* Negative response to DPLITE_MSGID_CONNECT_PEER.
+ * Peer will close the connection after sending this.
+ *
+ * DWORD - Error code (DPNERR_HOSTREJECTEDCONNECTION, DPNERR_INVALIDAPPLICATION, etc)
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */

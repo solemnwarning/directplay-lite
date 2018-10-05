@@ -1,6 +1,8 @@
 #include <winsock2.h>
 #include <windows.h>
+#include <ws2tcpip.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "network.hpp"
 

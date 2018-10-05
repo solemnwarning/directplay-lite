@@ -415,6 +415,12 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 		return DPNERR_GENERIC;
 	}
 	
+	if(WSAEventSelect(udp_socket, udp_socket_event, FD_READ | FD_WRITE) != 0
+		|| WSAEventSelect(listener_socket, other_socket_event, FD_ACCEPT) != 0)
+	{
+		return DPNERR_GENERIC;
+	}
+	
 	if(dwFlags & DPNCONNECT_SYNC)
 	{
 		connect_cv.wait(l, [this]() { return (state != STATE_CONNECTING && state != STATE_CONNECT_FAILED); });
@@ -1937,7 +1943,22 @@ void DirectPlay8Peer::io_peer_connected(std::unique_lock<std::mutex> &l, unsigne
 		}
 		else if(peer->state == Peer::PS_CONNECTING_PEER)
 		{
-			/* TODO: Send DPLITE_MSGID_CONNECT_PEER message. */
+			PacketSerialiser connect_peer(DPLITE_MSGID_CONNECT_PEER);
+			
+			connect_peer.append_guid(instance_guid);
+			connect_peer.append_guid(application_guid);
+			connect_peer.append_wstring(password);
+			
+			connect_peer.append_dword(local_player_id);
+			connect_peer.append_wstring(local_player_name);
+			connect_peer.append_data(local_player_data.data(), local_player_data.size());
+			
+			peer->sq.send(SendQueue::SEND_PRI_HIGH,
+				connect_peer,
+				NULL,
+				[](std::unique_lock<std::mutex> &l, HRESULT result){});
+			
+			peer->state = Peer::PS_REQUESTING_PEER;
 		}
 	}
 	else{
@@ -2122,6 +2143,24 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 						break;
 					}
 					
+					case DPLITE_MSGID_CONNECT_PEER:
+					{
+						handle_connect_peer(l, peer_id, *pd);
+						break;
+					}
+					
+					case DPLITE_MSGID_CONNECT_PEER_OK:
+					{
+						handle_connect_peer_ok(l, peer_id, *pd);
+						break;
+					}
+					
+					case DPLITE_MSGID_CONNECT_PEER_FAIL:
+					{
+						handle_connect_peer_fail(l, peer_id, *pd);
+						break;
+					}
+					
 					default:
 						log_printf(
 							"Unexpected message type %u received from peer %u",
@@ -2204,7 +2243,7 @@ void DirectPlay8Peer::peer_accept(std::unique_lock<std::mutex> &l)
 	worker_pool.add_handle(peer->event, [this, peer_id]() { io_peer_triggered(peer_id); });
 }
 
-bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remote_ip, uint16_t remote_port)
+bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remote_ip, uint16_t remote_port, DPNID player_id)
 {
 	int p_sock = create_client_socket(local_ip, local_port);
 	if(p_sock == -1)
@@ -2214,6 +2253,8 @@ bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remot
 	
 	unsigned int peer_id = next_peer_id++;
 	Peer *peer = new Peer(initial_state, p_sock, remote_ip, remote_port);
+	
+	peer->player_id = player_id;
 	
 	if(WSAEventSelect(peer->sock, peer->event, FD_CONNECT | FD_READ | FD_WRITE | FD_CLOSE) != 0)
 	{
@@ -2589,7 +2630,19 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 		connect_host_ok.append_dword(host_player_id);
 		connect_host_ok.append_dword(peer->player_id);
 		
-		connect_host_ok.append_dword(0); /* TODO: Other peers */
+		connect_host_ok.append_dword(player_to_peer_id.size() - 1);
+		
+		for(auto pi = peers.begin(); pi != peers.end(); ++pi)
+		{
+			Peer *pip = pi->second;
+			
+			if(pip != peer && pip->state == Peer::PS_CONNECTED)
+			{
+				connect_host_ok.append_dword(pip->player_id);
+				connect_host_ok.append_dword(pip->ip);
+				connect_host_ok.append_dword(pip->port);
+			}
+		}
 		
 		if(ic.dwReplyDataSize > 0)
 		{
@@ -2674,12 +2727,10 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 	
 	for(DWORD n = 0; n < n_other_peers; ++n)
 	{
-		DPNID    player_id     = pd.get_dword(4 + (n * 3));
-		uint32_t player_ipaddr = pd.get_dword(5 + (n * 3));
-		uint16_t player_port   = pd.get_dword(6 + (n * 3));
-		
-		/* TODO: Setup connections to other peers. */
-		abort();
+		/* Spinning through the loop so we blow up early if malformed. */
+		pd.get_dword(4 + (n * 3));
+		pd.get_dword(5 + (n * 3));
+		pd.get_dword(6 + (n * 3));
 	}
 	
 	int after_peers_base = 4 + (n_other_peers * 3);
@@ -2755,6 +2806,19 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 		peer->player_ctx = cp.pvPlayerContext;
 	}
 	
+	for(DWORD n = 0; n < n_other_peers; ++n)
+	{
+		DPNID    player_id     = pd.get_dword(4 + (n * 3));
+		uint32_t player_ipaddr = pd.get_dword(5 + (n * 3));
+		uint16_t player_port   = pd.get_dword(6 + (n * 3));
+		
+		if(!peer_connect(Peer::PS_CONNECTING_PEER, player_ipaddr, player_port, player_id))
+		{
+			connect_fail(l, DPNERR_PLAYERNOTREACHABLE, NULL, 0);
+			return;
+		}
+	}
+	
 	connect_check(l);
 }
 
@@ -2797,6 +2861,179 @@ void DirectPlay8Peer::handle_host_connect_fail(std::unique_lock<std::mutex> &l, 
 	}
 	
 	connect_fail(l, hResultCode, pvApplicationReplyData, dwApplicationReplyDataSize);
+}
+
+void DirectPlay8Peer::handle_connect_peer(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	if(peer->state != Peer::PS_ACCEPTED)
+	{
+		log_printf("Received unexpected DPLITE_MSGID_CONNECT_PEER from peer %u, in state %u",
+			peer_id, (unsigned)(peer->state));
+		return;
+	}
+	
+	auto send_fail = [&peer](DWORD error)
+	{
+		PacketSerialiser connect_peer_fail(DPLITE_MSGID_CONNECT_PEER_FAIL);
+		connect_peer_fail.append_dword(error);
+		
+		peer->sq.send(SendQueue::SEND_PRI_HIGH,
+			connect_peer_fail,
+			NULL,
+			[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+	};
+	
+	if(state != STATE_CONNECTED)
+	{
+		send_fail(DPNERR_GENERIC);
+		return;
+	}
+	
+	if(pd.get_guid(0) != instance_guid)
+	{
+		send_fail(DPNERR_INVALIDINSTANCE);
+		return;
+	}
+	
+	if(pd.get_guid(1) != application_guid)
+	{
+		send_fail(DPNERR_INVALIDAPPLICATION);
+		return;
+	}
+	
+	if(pd.get_wstring(2) != password)
+	{
+		send_fail(DPNERR_INVALIDPASSWORD);
+		return;
+	}
+	
+	peer->player_id = pd.get_dword(3);
+	peer->player_name = pd.get_wstring(4);
+	
+	peer->player_data.clear();
+	
+	std::pair<const void*, size_t> player_data = pd.get_data(5);
+	
+	peer->player_data.reserve(player_data.second);
+	peer->player_data.insert(peer->player_data.end(),
+		(const unsigned char*)(player_data.first),
+		(const unsigned char*)(player_data.first) + player_data.second);
+	
+	if(player_to_peer_id.find(peer->player_id) != player_to_peer_id.end())
+	{
+		log_printf("Rejected DPLITE_MSGID_CONNECT_PEER with already-known Player ID %u", (unsigned)(peer->player_id));
+		
+		send_fail(DPNERR_ALREADYCONNECTED);
+		return;
+	}
+	
+	player_to_peer_id[peer->player_id] = peer_id;
+	
+	peer->state = Peer::PS_CONNECTED;
+	
+	PacketSerialiser connect_peer_ok(DPLITE_MSGID_CONNECT_PEER_OK);
+	connect_peer_ok.append_wstring(local_player_name);
+	connect_peer_ok.append_data(local_player_data.data(), local_player_data.size());
+	
+	peer->sq.send(SendQueue::SEND_PRI_HIGH,
+		connect_peer_ok,
+		NULL,
+		[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+	
+	DPNMSG_CREATE_PLAYER cp;
+	memset(&cp, 0, sizeof(cp));
+	
+	cp.dwSize          = sizeof(cp);
+	cp.dpnidPlayer     = peer->player_id;
+	cp.pvPlayerContext = NULL;
+	
+	l.unlock();
+	message_handler(message_handler_ctx, DPN_MSGID_CREATE_PLAYER, &cp);
+	l.lock();
+	
+	RENEW_PEER_OR_RETURN();
+	
+	peer->player_ctx = cp.pvPlayerContext;
+}
+
+void DirectPlay8Peer::handle_connect_peer_ok(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	if(peer->state != Peer::PS_REQUESTING_PEER)
+	{
+		/* TODO: LOG ME */
+		return;
+	}
+	
+	assert(state == STATE_CONNECTING);
+	
+	peer->player_name = pd.get_wstring(0);
+	
+	peer->player_data.clear();
+	
+	std::pair<const void*, size_t> player_data = pd.get_data(1);
+	
+	peer->player_data.reserve(player_data.second);
+	peer->player_data.insert(peer->player_data.end(),
+		(const unsigned char*)(player_data.first),
+		(const unsigned char*)(player_data.first) + player_data.second);
+	
+	peer->state = Peer::PS_CONNECTED;
+	
+	/* player_id initialised in handling of DPLITE_MSGID_CONNECT_HOST_OK. */
+	player_to_peer_id[peer->player_id] = peer_id;
+	
+	{
+		DPNMSG_CREATE_PLAYER cp;
+		memset(&cp, 0, sizeof(cp));
+		
+		cp.dwSize          = sizeof(cp);
+		cp.dpnidPlayer     = peer->player_id;
+		cp.pvPlayerContext = NULL;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_CREATE_PLAYER, &cp);
+		l.lock();
+		
+		RENEW_PEER_OR_RETURN();
+		
+		peer->player_ctx = cp.pvPlayerContext;
+	}
+	
+	connect_check(l);
+}
+
+void DirectPlay8Peer::handle_connect_peer_fail(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	if(peer->state != Peer::PS_REQUESTING_PEER)
+	{
+		log_printf("Received unexpected DPLITE_MSGID_CONNECT_PEER_FAIL from peer %u, in state %u",
+			peer_id, (unsigned)(peer->state));
+		return;
+	}
+	
+	assert(state == STATE_CONNECTING);
+	
+	DWORD hResultCode = DPNERR_GENERIC;
+	
+	try {
+		hResultCode = pd.get_dword(0);
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		log_printf("Received invalid DPLITE_MSGID_CONNECT_PEER_FAIL from peer %u: %s",
+			peer_id, e.what());
+	}
+	
+	connect_fail(l, DPNERR_PLAYERNOTREACHABLE, NULL, 0);
 }
 
 void DirectPlay8Peer::handle_message(std::unique_lock<std::mutex> &l, const PacketDeserialiser &pd)
