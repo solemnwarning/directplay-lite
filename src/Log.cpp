@@ -82,3 +82,15 @@ void log_printf(const char *fmt, ...)
 		fprintf(log_fh, "\n");
 	}
 }
+
+/* Convert a windows error number to an error message */
+std::string win_strerror(DWORD errnum)
+{
+	char buf[256];
+	memset(buf, '\0', sizeof(buf));
+	
+	FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, errnum, 0, buf, (sizeof(buf) - 1), NULL);
+	buf[strcspn(buf, "\r\n")] = '\0';
+	
+	return buf;
+}

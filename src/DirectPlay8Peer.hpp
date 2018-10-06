@@ -121,6 +121,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			size_t recv_buf_cur;
 			
 			EventObject event;
+			long events;
 			
 			SendQueue sq;
 			
@@ -132,6 +133,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			std::map< DWORD, std::function<void(std::unique_lock<std::mutex>&, HRESULT)> > pending_acks;
 			
 			Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port);
+			
+			bool enable_events(long events);
+			bool disable_events(long events);
 			
 			DWORD alloc_ack_id();
 			void register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);

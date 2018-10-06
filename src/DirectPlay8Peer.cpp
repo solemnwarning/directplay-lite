@@ -2014,21 +2014,30 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 	
 	while((peer = get_peer_by_peer_id(peer_id)) != NULL)
 	{
-		if(!rb_claimed && peer->recv_busy)
+		if(!rb_claimed)
 		{
-			/* Another thread is already processing data from this socket.
-			 *
-			 * Only one thread at a time is allowed to handle reads, even when the
-			 * other thread is in the application callback, so that the order of
-			 * messages is preserved.
-			*/
-			return;
+			if(peer->recv_busy)
+			{
+				/* Another thread is already processing data from this socket.
+				 *
+				 * Only one thread at a time is allowed to handle reads, even when the
+				 * other thread is in the application callback, so that the order of
+				 * messages is preserved.
+				*/
+				return;
+			}
+			else{
+				/* No other thread is processing data from this peer, we shall
+				 * claim the throne and temporarily disable FD_READ events from it
+				 * to avoid other workers spinning against the recv_busy lock.
+				*/
+				
+				peer->recv_busy = true;
+				rb_claimed      = true;
+				
+				peer->disable_events(FD_READ | FD_CLOSE);
+			}
 		}
-		
-		peer->recv_busy = true;
-		rb_claimed      = true;
-		
-		/* TODO: Mask read events to avoid workers spinning. */
 		
 		int r = recv(peer->sock, (char*)(peer->recv_buf) + peer->recv_buf_cur, sizeof(peer->recv_buf) - peer->recv_buf_cur, 0);
 		if(r == 0)
@@ -2179,6 +2188,7 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 	
 	if(peer != NULL)
 	{
+		peer->enable_events(FD_READ | FD_CLOSE);
 		peer->recv_busy = false;
 	}
 }
@@ -2220,7 +2230,7 @@ void DirectPlay8Peer::peer_accept(std::unique_lock<std::mutex> &l)
 	unsigned int peer_id = next_peer_id++;
 	Peer *peer = new Peer(Peer::PS_ACCEPTED, newfd, addr.sin_addr.s_addr, ntohs(addr.sin_port));
 	
-	if(WSAEventSelect(peer->sock, peer->event, FD_READ | FD_WRITE | FD_CLOSE) != 0)
+	if(!peer->enable_events(FD_READ | FD_WRITE | FD_CLOSE))
 	{
 		log_printf("WSAEventSelect() failed, dropping peer");
 		
@@ -2248,7 +2258,7 @@ bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remot
 	
 	peer->player_id = player_id;
 	
-	if(WSAEventSelect(peer->sock, peer->event, FD_CONNECT | FD_READ | FD_WRITE | FD_CLOSE) != 0)
+	if(!peer->enable_events(FD_CONNECT | FD_READ | FD_WRITE | FD_CLOSE))
 	{
 		closesocket(peer->sock);
 		delete peer;
@@ -3306,8 +3316,38 @@ void DirectPlay8Peer::connect_fail(std::unique_lock<std::mutex> &l, HRESULT hRes
 }
 
 DirectPlay8Peer::Peer::Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port):
-	state(state), sock(sock), ip(ip), port(port), recv_busy(false), recv_buf_cur(0), sq(event), next_ack_id(1)
+	state(state), sock(sock), ip(ip), port(port), recv_busy(false), recv_buf_cur(0), events(0), sq(event), next_ack_id(1)
 {}
+
+bool DirectPlay8Peer::Peer::enable_events(long events)
+{
+	if(WSAEventSelect(sock, event, (this->events | events)) != 0)
+	{
+		DWORD err = WSAGetLastError();
+		log_printf("WSAEventSelect() error: ", win_strerror(err).c_str());
+		
+		return false;
+	}
+	
+	this->events |= events;
+	
+	return true;
+}
+
+bool DirectPlay8Peer::Peer::disable_events(long events)
+{
+	if(WSAEventSelect(sock, event, (this->events & ~events)) != 0)
+	{
+		DWORD err = WSAGetLastError();
+		log_printf("WSAEventSelect() error: ", win_strerror(err).c_str());
+		
+		return false;
+	}
+	
+	this->events &= ~events;
+	
+	return true;
+}
 
 DWORD DirectPlay8Peer::Peer::alloc_ack_id()
 {
