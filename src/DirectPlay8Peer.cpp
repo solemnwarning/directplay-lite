@@ -1126,7 +1126,7 @@ HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo
 	
 	std::function<void(std::unique_lock<std::mutex>&, HRESULT)> op_finished_cb;
 	
-	unsigned int sync_pending = 0;
+	unsigned int sync_pending = 1;
 	unsigned int *pending = &sync_pending;
 	
 	std::condition_variable sync_cv;
@@ -1157,7 +1157,7 @@ HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo
 			*phAsyncHandle = async_handle;
 		}
 		
-		pending = new unsigned int(0);
+		pending = new unsigned int(1);
 		async_result = new HRESULT(S_OK);
 		
 		op_finished_cb = [this, pending, async_result, async_handle, pvAsyncContext](std::unique_lock<std::mutex> &l, HRESULT result)
@@ -1232,12 +1232,6 @@ HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo
 		++(*pending);
 	}
 	
-	/* Bodge to dispatch a DPNMSG_ASYNC_OP_COMPLETE if we didn't have any
-	 * peers to notify. None of the send callbacks could have touched
-	 * pending by this point since we haven't released the lock.
-	*/
-	bool no_peers_to_notify = (*pending == 0);
-	
 	{
 		/* Notify the local instance it just changed its own peer info... which the
 		 * official DirectX does for some reason.
@@ -1253,6 +1247,8 @@ HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo
 		l.unlock();
 		message_handler(message_handler_ctx, DPN_MSGID_PEER_INFO, &pi);
 		l.lock();
+		
+		op_finished_cb(l, S_OK);
 	}
 	
 	if(dwFlags & DPNSETPEERINFO_SYNC)
@@ -1261,12 +1257,6 @@ HRESULT DirectPlay8Peer::SetPeerInfo(CONST DPN_PLAYER_INFO* CONST pdpnPlayerInfo
 		return sync_result;
 	}
 	else{
-		if(no_peers_to_notify)
-		{
-			++(*pending);
-			op_finished_cb(l, S_OK);
-		}
-		
 		return DPNSUCCESS_PENDING;
 	}
 }
