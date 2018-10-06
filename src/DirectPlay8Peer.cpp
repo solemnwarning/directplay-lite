@@ -45,12 +45,9 @@ DirectPlay8Peer::DirectPlay8Peer(std::atomic<unsigned int> *global_refcount):
 	udp_socket(-1),
 	listener_socket(-1),
 	discovery_socket(-1),
-	worker_pool(THREADS_PER_POOL, MAX_HANDLES_PER_POOL),
+	worker_pool(NULL),
 	udp_sq(udp_socket_event)
 {
-	worker_pool.add_handle(udp_socket_event,   [this]() { handle_udp_socket_event();   });
-	worker_pool.add_handle(other_socket_event, [this]() { handle_other_socket_event(); });
-	
 	AddRef();
 }
 
@@ -60,9 +57,6 @@ DirectPlay8Peer::~DirectPlay8Peer()
 	{
 		Close(0);
 	}
-	
-	worker_pool.remove_handle(other_socket_event);
-	worker_pool.remove_handle(udp_socket_event);
 }
 
 HRESULT DirectPlay8Peer::QueryInterface(REFIID riid, void **ppvObject)
@@ -116,6 +110,11 @@ HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSA
 	
 	message_handler     = pfn;
 	message_handler_ctx = pvUserContext;
+	
+	worker_pool = new HandleHandlingPool(THREADS_PER_POOL, MAX_HANDLES_PER_POOL);
+	
+	worker_pool->add_handle(udp_socket_event,   [this]() { handle_udp_socket_event();   });
+	worker_pool->add_handle(other_socket_event, [this]() { handle_other_socket_event(); });
 	
 	WSADATA wd;
 	if(WSAStartup(MAKEWORD(2,2), &wd) != 0)
@@ -1400,6 +1399,9 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 		Sleep(50);
 	}
 	
+	delete worker_pool;
+	worker_pool = NULL;
+	
 	if(discovery_socket != -1)
 	{
 		closesocket(discovery_socket);
@@ -2240,7 +2242,7 @@ void DirectPlay8Peer::peer_accept(std::unique_lock<std::mutex> &l)
 	
 	peers.insert(std::make_pair(peer_id, peer));
 	
-	worker_pool.add_handle(peer->event, [this, peer_id]() { io_peer_triggered(peer_id); });
+	worker_pool->add_handle(peer->event, [this, peer_id]() { io_peer_triggered(peer_id); });
 }
 
 bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remote_ip, uint16_t remote_port, DPNID player_id)
@@ -2279,7 +2281,7 @@ bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remot
 	
 	peers.insert(std::make_pair(peer_id, peer));
 	
-	worker_pool.add_handle(peer->event, [this, peer_id]() { io_peer_triggered(peer_id); });
+	worker_pool->add_handle(peer->event, [this, peer_id]() { io_peer_triggered(peer_id); });
 	
 	return true;
 }
@@ -2330,7 +2332,7 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 			player_to_peer_id.erase(peer->player_id);
 		}
 		
-		worker_pool.remove_handle(peer->event);
+		worker_pool->remove_handle(peer->event);
 		
 		closesocket(peer->sock);
 		

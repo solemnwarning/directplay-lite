@@ -60,7 +60,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		EventObject udp_socket_event;
 		EventObject other_socket_event;
 		
-		HandleHandlingPool worker_pool;
+		HandleHandlingPool *worker_pool;
 		
 		SendQueue udp_sq;
 		
