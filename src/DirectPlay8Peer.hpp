@@ -124,6 +124,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			long events;
 			
 			SendQueue sq;
+			bool send_open;
 			
 			/* Some messages require confirmation of success/failure from the other
 			 * peer. Each of these is assigned a rolling (per peer) ID, the callback
@@ -187,9 +188,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		
 		void peer_accept(std::unique_lock<std::mutex> &l);
 		bool peer_connect(Peer::PeerState initial_state, uint32_t remote_ip, uint16_t remote_port, DPNID player_id = 0);
-		void peer_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, HRESULT outstanding_op_result);
+		void peer_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, HRESULT outstanding_op_result, DWORD destroy_player_reason);
 		
-		void close_everything_now(std::unique_lock<std::mutex> &l);
+		void close_everything_now(std::unique_lock<std::mutex> &l, HRESULT outstanding_op_result, DWORD destroy_player_reason);
 		
 		void handle_host_enum_request(std::unique_lock<std::mutex> &l, const PacketDeserialiser &pd, const struct sockaddr_in *from_addr);
 		void handle_host_connect_request(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);

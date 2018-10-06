@@ -106,6 +106,24 @@ int create_client_socket(uint32_t local_ipaddr, uint16_t local_port)
 		return -1;
 	}
 	
+	/* Set SO_LINGER so that closesocket() does a hard close, immediately removing the socket
+	 * address from the connection table.
+	 *
+	 * If this isn't done, then we are able to immediately bind() new sockets to the same
+	 * local address (as we may when the port isn't specified), but then outgoing connections
+	 * made from it will fail with WSAEADDRINUSE until the background close completes.
+	*/
+	
+	struct linger no_linger;
+	no_linger.l_onoff  = 1;
+	no_linger.l_linger = 0;
+	
+	if(setsockopt(sock, SOL_SOCKET, SO_LINGER, (char*)(&no_linger), sizeof(no_linger)) == -1)
+	{
+		closesocket(sock);
+		return -1;
+	}
+	
 	struct sockaddr_in l_addr;
 	l_addr.sin_family      = AF_INET;
 	l_addr.sin_addr.s_addr = local_ipaddr;
