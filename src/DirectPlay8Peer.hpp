@@ -34,11 +34,13 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			STATE_CONNECTING,
 			STATE_CONNECT_FAILED,
 			STATE_CONNECTED,
+			STATE_CLOSING,
 		} state;
 		
 		AsyncHandleAllocator handle_alloc;
 		
 		std::map<DPNHANDLE, HostEnumerator> host_enums;
+		std::condition_variable host_enum_completed;
 		
 		GUID instance_guid;
 		GUID application_guid;
@@ -53,7 +55,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		uint32_t local_ip;
 		uint16_t local_port;
 		
-		int udp_socket;        /* UDP socket, used for general send/recv operations. */
+		int udp_socket;        /* UDP socket, used for non-guaranteed send/recv operations. */
 		int listener_socket;   /* TCP listener socket. */
 		int discovery_socket;  /* Discovery UDP sockets, RECIEVES broadcasts only. */
 		
@@ -154,14 +156,16 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		
 		unsigned int next_peer_id;
 		std::map<unsigned int, Peer*> peers;
+		std::condition_variable peer_destroyed;
 		
 		std::map<DPNID, unsigned int> player_to_peer_id;
 		
-		/* Serialises access to:
+		/* Serialises access to everything.
 		 *
-		 * host_enums
-		 * pending_peers
-		 * peers
+		 * All methods and event handlers hold this lock while executing. They will
+		 * temporarily release it when executing the application message handler, after
+		 * which they must reclaim it and check for any changes to the state which may
+		 * affect them, such as a peer being destroyed.
 		*/
 		std::mutex lock;
 		

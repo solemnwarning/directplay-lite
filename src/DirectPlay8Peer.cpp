@@ -55,7 +55,7 @@ DirectPlay8Peer::~DirectPlay8Peer()
 {
 	if(state != STATE_NEW)
 	{
-		Close(0);
+		Close(DPNCLOSE_IMMEDIATE);
 	}
 }
 
@@ -108,6 +108,13 @@ HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSA
 		return DPNERR_ALREADYINITIALIZED;
 	}
 	
+	WSADATA wd;
+	if(WSAStartup(MAKEWORD(2,2), &wd) != 0)
+	{
+		log_printf("WSAStartup() failed");
+		return DPNERR_GENERIC;
+	}
+	
 	message_handler     = pfn;
 	message_handler_ctx = pvUserContext;
 	
@@ -115,13 +122,6 @@ HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSA
 	
 	worker_pool->add_handle(udp_socket_event,   [this]() { handle_udp_socket_event();   });
 	worker_pool->add_handle(other_socket_event, [this]() { handle_other_socket_event(); });
-	
-	WSADATA wd;
-	if(WSAStartup(MAKEWORD(2,2), &wd) != 0)
-	{
-		log_printf("WSAStartup() failed");
-		return DPNERR_GENERIC;
-	}
 	
 	state = STATE_INITIALISED;
 	
@@ -1369,28 +1369,26 @@ HRESULT DirectPlay8Peer::GetLocalHostAddresses(IDirectPlay8Address** CONST prgpA
 
 HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 {
-	if(state == STATE_NEW)
+	std::unique_lock<std::mutex> l(lock);
+	
+	bool was_connected = false;
+	
+	switch(state)
 	{
-		return DPNERR_UNINITIALIZED;
+		case STATE_NEW:            return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:    break;
+		case STATE_HOSTING:        was_connected = true; break;
+		case STATE_CONNECTING:     break;
+		case STATE_CONNECT_FAILED: break;
+		case STATE_CONNECTED:      was_connected = true; break;
+		case STATE_CLOSING:        return DPNERR_ALREADYCLOSING;
 	}
 	
-	CancelAsyncOperation(0, DPNCANCEL_ALL_OPERATIONS);
-	
-	/* TODO: Wait properly. */
-	
-	while(1)
+	/* Signal all EnumHosts() calls to complete. */
+	for(auto ei = host_enums.begin(); ei != host_enums.end(); ++ei)
 	{
-		std::unique_lock<std::mutex> l(lock);
-		if(host_enums.empty())
-		{
-			break;
-		}
-		
-		Sleep(50);
+		ei->second.cancel();
 	}
-	
-	delete worker_pool;
-	worker_pool = NULL;
 	
 	if(discovery_socket != -1)
 	{
@@ -1410,6 +1408,88 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 		udp_socket = -1;
 	}
 	
+	state = STATE_CLOSING;
+	
+	if(dwFlags & DPNCLOSE_IMMEDIATE)
+	{
+		while(!peers.empty())
+		{
+			unsigned int peer_id = peers.begin()->first;
+			peer_destroy(l, peer_id, DPNERR_USERCANCEL, DPNDESTROYPLAYERREASON_NORMAL);
+		}
+	}
+	else{
+		for(auto pi = peers.begin(); pi != peers.end();)
+		{
+			unsigned int peer_id = pi->first;
+			Peer *peer = pi->second;
+			
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				DPNMSG_DESTROY_PLAYER dp;
+				memset(&dp, 0, sizeof(dp));
+				
+				dp.dwSize          = sizeof(dp);
+				dp.dpnidPlayer     = peer->player_id;
+				dp.pvPlayerContext = peer->player_ctx;
+				dp.dwReason        = DPNDESTROYPLAYERREASON_NORMAL;
+				
+				peer->state = Peer::PS_CLOSING;
+				
+				/* Wake up a worker to deal with closing the connection. */
+				SetEvent(peer->event);
+				
+				l.unlock();
+				message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+				l.lock();
+				
+				pi = peers.begin();
+			}
+			else if(peer->state == Peer::PS_CLOSING)
+			{
+				/* Do nothing. We're waiting for this peer to go away. */
+				++pi;
+			}
+			else{
+				peer_destroy(l, peer_id, DPNERR_USERCANCEL, DPNDESTROYPLAYERREASON_NORMAL);
+				
+				pi = peers.begin();
+			}
+		}
+		
+		/* Wait for remaining peers to finish disconnecting. */
+		peer_destroyed.wait(l, [this]() { return peers.empty(); });
+	}
+	
+	if(was_connected)
+	{
+		/* Raise a DPNMSG_DESTROY_PLAYER for ourself. */
+		
+		DPNMSG_DESTROY_PLAYER dp;
+		memset(&dp, 0, sizeof(dp));
+		
+		dp.dwSize          = sizeof(DPNMSG_DESTROY_PLAYER);
+		dp.dpnidPlayer     = local_player_id;
+		dp.pvPlayerContext = local_player_ctx;
+		dp.dwReason        = DPNDESTROYPLAYERREASON_NORMAL;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+		l.lock();
+	}
+	
+	/* Wait for outstanding EnumHosts() calls. */
+	host_enum_completed.wait(l, [this]() { return host_enums.empty(); });
+	
+	/* We need to release the lock while the worker_pool destructor runs so that any worker
+	 * threads waiting for it can finish. No other thread should mess with it while we are in
+	 * STATE_CLOSING and we have no open sockets.
+	*/
+	l.unlock();
+	delete worker_pool;
+	l.lock();
+	worker_pool = NULL;
+	
 	WSACleanup();
 	
 	state = STATE_NEW;
@@ -1427,6 +1507,8 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 	try {
 		if(dwFlags & DPNENUMHOSTS_SYNC)
 		{
+			/* TODO: Instantiate synchronous instances in host_enums. */
+			
 			HRESULT result;
 			
 			HostEnumerator he(
@@ -1474,6 +1556,8 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 						
 						std::unique_lock<std::mutex> l(lock);
 						host_enums.erase(handle);
+						
+						host_enum_completed.notify_all();
 					}));
 			
 			return DPNSUCCESS_PENDING;
@@ -1718,6 +1802,11 @@ DirectPlay8Peer::Peer *DirectPlay8Peer::get_peer_by_player_id(DPNID player_id)
 void DirectPlay8Peer::handle_udp_socket_event()
 {
 	std::unique_lock<std::mutex> l(lock);
+	
+	if(udp_socket == -1)
+	{
+		return;
+	}
 	
 	struct sockaddr_in from_addr;
 	int fa_len = sizeof(from_addr);
@@ -2419,6 +2508,11 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 		dp.pvPlayerContext = peer->player_ctx;
 		dp.dwReason        = destroy_player_reason;
 		
+		/* Bodge to prevent io_peer_send() initiating a graceful shutdown
+		 * while the application is handling the DPNMSG_DESTROY_PLAYER.
+		*/
+		peer->send_open = false;
+		
 		peer->state = Peer::PS_CLOSING;
 		
 		l.unlock();
@@ -2446,6 +2540,8 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 	
 	peers.erase(peer_id);
 	delete peer;
+	
+	peer_destroyed.notify_all();
 }
 
 /* Immediately close all sockets and erase all peers. */
@@ -3434,7 +3530,7 @@ void DirectPlay8Peer::connect_fail(std::unique_lock<std::mutex> &l, HRESULT hRes
 }
 
 DirectPlay8Peer::Peer::Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port):
-	state(state), sock(sock), ip(ip), port(port), recv_busy(false), recv_buf_cur(0), events(0), sq(event), next_ack_id(1)
+	state(state), sock(sock), ip(ip), port(port), recv_busy(false), recv_buf_cur(0), events(0), sq(event), send_open(true), next_ack_id(1)
 {}
 
 bool DirectPlay8Peer::Peer::enable_events(long events)

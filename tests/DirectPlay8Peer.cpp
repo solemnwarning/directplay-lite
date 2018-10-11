@@ -2,7 +2,10 @@
 #include <array>
 #include <functional>
 #include <gtest/gtest.h>
+#include <list>
+#include <mutex>
 #include <stdexcept>
+#include <stdint.h>
 
 #include "../src/DirectPlay8Address.hpp"
 #include "../src/DirectPlay8Peer.hpp"
@@ -85,6 +88,15 @@ class IDP8AddressInstance
 		{
 			if(instance->SetSP(&service_provider) != S_OK
 				|| instance->AddComponent(DPNA_KEY_HOSTNAME, hostname, ((wcslen(hostname) + 1) * sizeof(wchar_t)), DPNA_DATATYPE_STRING) != S_OK
+				|| instance->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD) != S_OK)
+			{
+				throw std::runtime_error("Address setup failed");
+			}
+		}
+		
+		IDP8AddressInstance(GUID service_provider, DWORD port): IDP8AddressInstance()
+		{
+			if(instance->SetSP(&service_provider) != S_OK
 				|| instance->AddComponent(DPNA_KEY_PORT, &port, sizeof(DWORD), DPNA_DATATYPE_DWORD) != S_OK)
 			{
 				throw std::runtime_error("Address setup failed");
@@ -215,6 +227,131 @@ struct SessionHost
 	{
 		return dp8p.instance;
 	}
+};
+
+class TestPeer
+{
+	public:
+		DPNID first_cp_dpnidPlayer;
+		DPNID first_cc_dpnidLocal;
+		
+	private:
+		const char *ident;
+		
+		bool expecting;
+		std::list< std::function<HRESULT(DWORD,PVOID)> > callbacks;
+		std::mutex lock;
+		
+		IDirectPlay8Peer *instance;
+		
+		static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID pMessage)
+		{
+			TestPeer *t = (TestPeer*)(pvUserContext);
+			std::unique_lock<std::mutex> l(t->lock);
+			
+			if(t->expecting)
+			{
+				if(!t->callbacks.empty())
+				{
+					auto callback = t->callbacks.front();
+					t->callbacks.pop_front();
+					
+					l.unlock();
+					
+					return callback(dwMessageType, pMessage);
+				}
+				else{
+					ADD_FAILURE() << "[" << t->ident << "] Unexpected message with type " << dwMessageType;
+					return DPN_OK;
+				}
+			}
+			
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				
+				if(t->first_cp_dpnidPlayer == -1)
+				{
+					t->first_cp_dpnidPlayer = cp->dpnidPlayer;
+				}
+				
+				/* Invert the player ID to serve as a default context pointer. */
+				cp->pvPlayerContext = (void*)~(uintptr_t)(cp->dpnidPlayer);
+			}
+			else if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				
+				if(t->first_cc_dpnidLocal == -1)
+				{
+					t->first_cc_dpnidLocal = cc->dpnidLocal;
+				}
+			}
+			
+			return DPN_OK;
+		}
+		
+	public:
+		TestPeer(const char *ident):
+			first_cp_dpnidPlayer(-1),
+			first_cc_dpnidLocal(-1),
+			ident(ident),
+			expecting(false)
+		{
+			#ifdef INSTANTIATE_FROM_COM
+			CoInitialize(NULL);
+			CoCreateInstance(CLSID_DirectPlay8Peer, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Peer, (void**)(&instance));
+			#else
+			instance = new DirectPlay8Peer(NULL);
+			#endif
+			
+			if(instance->Initialize(this, &callback, 0) != S_OK)
+			{
+				throw std::runtime_error("IDirectPlay8Peer->Initialize() failed");
+			}
+		}
+		
+		~TestPeer()
+		{
+			#ifdef INSTANTIATE_FROM_COM
+			instance->Release();
+			CoUninitialize();
+			#else
+			instance->Release();
+			#endif
+		}
+		
+		IDirectPlay8Peer &operator*()
+		{
+			return *instance;
+		}
+		
+		IDirectPlay8Peer *operator->()
+		{
+			return instance;
+		}
+		
+		void expect_begin()
+		{
+			std::unique_lock<std::mutex> l(lock);
+			expecting  = true;
+		}
+		
+		void expect_push(const std::function<HRESULT(DWORD,PVOID)> &callback)
+		{
+			std::unique_lock<std::mutex> l(lock);
+			callbacks.push_back(callback);
+		}
+		
+		void expect_end()
+		{
+			std::unique_lock<std::mutex> l(lock);
+			expecting = false;
+			
+			EXPECT_TRUE(callbacks.empty());
+			
+			callbacks.clear();
+		}
 };
 
 struct FoundSession
@@ -2298,6 +2435,346 @@ TEST(DirectPlay8Peer, ConnectTwoPeersToHost)
 	EXPECT_EQ(p2_cp1_dpnidPlayer, p2_player_id);
 	EXPECT_EQ(p2_cc_dpnidLocal,   p2_player_id);
 	EXPECT_EQ(p2_cp2_dpnidPlayer, p1_player_id);
+}
+
+TEST(DirectPlay8Peer, NonHostPeerSoftClose)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	TestPeer peer2("peer2");
+	ASSERT_EQ(peer2->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	host.expect_begin();
+	host.expect_push([&peer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize,          sizeof(DPNMSG_DESTROY_PLAYER));
+			EXPECT_EQ(dp->dpnidPlayer,     peer2.first_cc_dpnidLocal);
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+		}
+		
+		return DPN_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&peer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize,          sizeof(DPNMSG_DESTROY_PLAYER));
+			EXPECT_EQ(dp->dpnidPlayer,     peer2.first_cc_dpnidLocal);
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+		}
+		
+		return DPN_OK;
+	});
+	
+	DPNID p2_dp_dpnidPlayer1;
+	DPNID p2_dp_dpnidPlayer2;
+	
+	peer2.expect_begin();
+	peer2.expect_push([&host, &peer1, &peer2, &p2_dp_dpnidPlayer1](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize, sizeof(DPNMSG_DESTROY_PLAYER));
+			
+			EXPECT_TRUE((dp->dpnidPlayer == host.first_cp_dpnidPlayer || dp->dpnidPlayer == peer1.first_cc_dpnidLocal))
+				<< "(dpnidPlayer = " << dp->dpnidPlayer
+				<< ", host = " << host.first_cp_dpnidPlayer
+				<< ", peer1 = " << peer1.first_cc_dpnidLocal
+				<< ", peer2 = " << peer2.first_cc_dpnidLocal << ")";
+			
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+			
+			p2_dp_dpnidPlayer1 = dp->dpnidPlayer;
+		}
+		
+		return DPN_OK;
+	});
+	peer2.expect_push([&host, &peer1, &peer2, &p2_dp_dpnidPlayer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize, sizeof(DPNMSG_DESTROY_PLAYER));
+			
+			EXPECT_TRUE((dp->dpnidPlayer == host.first_cp_dpnidPlayer || dp->dpnidPlayer == peer1.first_cc_dpnidLocal))
+				<< "(dpnidPlayer = " << dp->dpnidPlayer
+				<< ", host = " << host.first_cp_dpnidPlayer
+				<< ", peer1 = " << peer1.first_cc_dpnidLocal
+				<< ", peer2 = " << peer2.first_cc_dpnidLocal << ")";
+			
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+			
+			p2_dp_dpnidPlayer2 = dp->dpnidPlayer;
+		}
+		
+		return DPN_OK;
+	});
+	peer2.expect_push([&host, &peer1, &peer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize, sizeof(DPNMSG_DESTROY_PLAYER));
+			
+			EXPECT_TRUE((dp->dpnidPlayer == peer2.first_cc_dpnidLocal))
+				<< "(dpnidPlayer = " << dp->dpnidPlayer
+				<< ", host = " << host.first_cp_dpnidPlayer
+				<< ", peer1 = " << peer1.first_cc_dpnidLocal
+				<< ", peer2 = " << peer2.first_cc_dpnidLocal << ")";
+			
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+		}
+		
+		return DPN_OK;
+	});
+	
+	peer2->Close(0);
+	
+	Sleep(100);
+	
+	peer2.expect_end();
+	peer1.expect_end();
+	host.expect_end();
+	
+	EXPECT_NE(p2_dp_dpnidPlayer1, p2_dp_dpnidPlayer2);
+}
+
+TEST(DirectPlay8Peer, NonHostPeerHardClose)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	TestPeer peer2("peer2");
+	ASSERT_EQ(peer2->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	host.expect_begin();
+	host.expect_push([&peer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize,          sizeof(DPNMSG_DESTROY_PLAYER));
+			EXPECT_EQ(dp->dpnidPlayer,     peer2.first_cc_dpnidLocal);
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_CONNECTIONLOST);
+		}
+		
+		return DPN_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&peer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize,          sizeof(DPNMSG_DESTROY_PLAYER));
+			EXPECT_EQ(dp->dpnidPlayer,     peer2.first_cc_dpnidLocal);
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_CONNECTIONLOST);
+		}
+		
+		return DPN_OK;
+	});
+	
+	DPNID p2_dp_dpnidPlayer1;
+	DPNID p2_dp_dpnidPlayer2;
+	
+	peer2.expect_begin();
+	peer2.expect_push([&host, &peer1, &peer2, &p2_dp_dpnidPlayer1](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize, sizeof(DPNMSG_DESTROY_PLAYER));
+			
+			EXPECT_TRUE((dp->dpnidPlayer == host.first_cp_dpnidPlayer || dp->dpnidPlayer == peer1.first_cc_dpnidLocal))
+				<< "(dpnidPlayer = " << dp->dpnidPlayer
+				<< ", host = " << host.first_cp_dpnidPlayer
+				<< ", peer1 = " << peer1.first_cc_dpnidLocal
+				<< ", peer2 = " << peer2.first_cc_dpnidLocal << ")";
+			
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+			
+			p2_dp_dpnidPlayer1 = dp->dpnidPlayer;
+		}
+		
+		return DPN_OK;
+	});
+	peer2.expect_push([&host, &peer1, &peer2, &p2_dp_dpnidPlayer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize, sizeof(DPNMSG_DESTROY_PLAYER));
+			
+			EXPECT_TRUE((dp->dpnidPlayer == host.first_cp_dpnidPlayer || dp->dpnidPlayer == peer1.first_cc_dpnidLocal))
+				<< "(dpnidPlayer = " << dp->dpnidPlayer
+				<< ", host = " << host.first_cp_dpnidPlayer
+				<< ", peer1 = " << peer1.first_cc_dpnidLocal
+				<< ", peer2 = " << peer2.first_cc_dpnidLocal << ")";
+			
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+			
+			p2_dp_dpnidPlayer2 = dp->dpnidPlayer;
+		}
+		
+		return DPN_OK;
+	});
+	peer2.expect_push([&host, &peer1, &peer2](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_PLAYER);
+		
+		if(dwMessageType == DPN_MSGID_DESTROY_PLAYER)
+		{
+			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
+			
+			EXPECT_EQ(dp->dwSize, sizeof(DPNMSG_DESTROY_PLAYER));
+			
+			EXPECT_TRUE((dp->dpnidPlayer == peer2.first_cc_dpnidLocal))
+				<< "(dpnidPlayer = " << dp->dpnidPlayer
+				<< ", host = " << host.first_cp_dpnidPlayer
+				<< ", peer1 = " << peer1.first_cc_dpnidLocal
+				<< ", peer2 = " << peer2.first_cc_dpnidLocal << ")";
+			
+			EXPECT_EQ(dp->pvPlayerContext, (void*)~(uintptr_t)(dp->dpnidPlayer));
+			EXPECT_EQ(dp->dwReason,        DPNDESTROYPLAYERREASON_NORMAL);
+		}
+		
+		return DPN_OK;
+	});
+	
+	peer2->Close(DPNCLOSE_IMMEDIATE);
+	
+	Sleep(100);
+	
+	peer2.expect_end();
+	peer1.expect_end();
+	host.expect_end();
+	
+	EXPECT_NE(p2_dp_dpnidPlayer1, p2_dp_dpnidPlayer2);
 }
 
 TEST(DirectPlay8Peer, GetApplicationDesc)
