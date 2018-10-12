@@ -35,6 +35,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			STATE_CONNECT_FAILED,
 			STATE_CONNECTED,
 			STATE_CLOSING,
+			STATE_TERMINATED,
 		} state;
 		
 		AsyncHandleAllocator handle_alloc;

@@ -1372,16 +1372,18 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 	std::unique_lock<std::mutex> l(lock);
 	
 	bool was_connected = false;
+	bool was_hosting   = false;
 	
 	switch(state)
 	{
 		case STATE_NEW:            return DPNERR_UNINITIALIZED;
 		case STATE_INITIALISED:    break;
-		case STATE_HOSTING:        was_connected = true; break;
+		case STATE_HOSTING:        was_hosting = true; break;
 		case STATE_CONNECTING:     break;
 		case STATE_CONNECT_FAILED: break;
 		case STATE_CONNECTED:      was_connected = true; break;
 		case STATE_CLOSING:        return DPNERR_ALREADYCLOSING;
+		case STATE_TERMINATED:     break;
 	}
 	
 	/* Signal all EnumHosts() calls to complete. */
@@ -1409,6 +1411,29 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 	}
 	
 	state = STATE_CLOSING;
+	
+	/* When Close() is called as a host, the DPNMSG_DESTROY_PLAYER for the local player comes
+	 * before the ones for the peers, when called as a non-host, it comes after.
+	 *
+	 * Do not question the ways of DirectX.
+	*/
+	
+	if(was_hosting)
+	{
+		/* Raise a DPNMSG_DESTROY_PLAYER for ourself. */
+		
+		DPNMSG_DESTROY_PLAYER dp;
+		memset(&dp, 0, sizeof(dp));
+		
+		dp.dwSize          = sizeof(DPNMSG_DESTROY_PLAYER);
+		dp.dpnidPlayer     = local_player_id;
+		dp.pvPlayerContext = local_player_ctx;
+		dp.dwReason        = DPNDESTROYPLAYERREASON_NORMAL;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+		l.lock();
+	}
 	
 	if(dwFlags & DPNCLOSE_IMMEDIATE)
 	{
@@ -2500,6 +2525,8 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 	
 	if(peer->state == Peer::PS_CONNECTED)
 	{
+		DPNID killed_player_id = peer->player_id;
+		
 		DPNMSG_DESTROY_PLAYER dp;
 		memset(&dp, 0, sizeof(dp));
 		
@@ -2519,9 +2546,52 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
 		l.lock();
 		
-		RENEW_PEER_OR_RETURN();
+		player_to_peer_id.erase(killed_player_id);
 		
-		player_to_peer_id.erase(peer->player_id);
+		if(state == STATE_CONNECTED && killed_player_id == host_player_id)
+		{
+			/* The connection to the host has been lost. We need to raise a
+			 * DPNMSG_TERMINATE_SESSION and dump all the other peers. We don't return
+			 * to STATE_INITIALISED because the application is still expected to call
+			 * IDirectPlay8Peer::Close() after receiving DPNMSG_TERMINATE_SESSION.
+			 *
+			 * TODO: Implement host migration here.
+			*/
+			
+			DPNMSG_TERMINATE_SESSION ts;
+			memset(&ts, 0, sizeof(ts));
+			
+			ts.dwSize              = sizeof(DPNMSG_TERMINATE_SESSION);
+			ts.hResultCode         = outstanding_op_result;
+			ts.pvTerminateData     = (void*)(NULL);
+			ts.dwTerminateDataSize = 0;
+			
+			state = STATE_TERMINATED;
+			
+			l.unlock();
+			message_handler(message_handler_ctx, DPN_MSGID_TERMINATE_SESSION, &ts);
+			l.lock();
+			
+			DPNMSG_DESTROY_PLAYER dp;
+			memset(&dp, 0, sizeof(dp));
+			
+			dp.dwSize          = sizeof(DPNMSG_DESTROY_PLAYER);
+			dp.dpnidPlayer     = local_player_id;
+			dp.pvPlayerContext = local_player_ctx;
+			dp.dwReason        = DPNDESTROYPLAYERREASON_NORMAL;
+			
+			l.unlock();
+			message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+			l.lock();
+			
+			while(!peers.empty())
+			{
+				auto peer_id = peers.begin()->first;
+				peer_destroy(l, peer_id, outstanding_op_result, destroy_player_reason);
+			}
+		}
+		
+		RENEW_PEER_OR_RETURN();
 	}
 	else if(state == STATE_CONNECTING && (peer->state == Peer::PS_CONNECTING_HOST || peer->state == Peer::PS_REQUESTING_HOST))
 	{
