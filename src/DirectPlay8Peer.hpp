@@ -27,16 +27,19 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		PFNDPNMESSAGEHANDLER message_handler;
 		PVOID message_handler_ctx;
 		
-		enum {
+		enum State {
 			STATE_NEW,
 			STATE_INITIALISED,
 			STATE_HOSTING,
-			STATE_CONNECTING,
+			STATE_CONNECTING_TO_HOST,
+			STATE_CONNECTING_TO_PEERS,
 			STATE_CONNECT_FAILED,
 			STATE_CONNECTED,
 			STATE_CLOSING,
 			STATE_TERMINATED,
-		} state;
+		};
+		
+		State state;
 		
 		AsyncHandleAllocator handle_alloc;
 		

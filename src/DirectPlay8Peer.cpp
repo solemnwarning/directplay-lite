@@ -251,11 +251,12 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 	
 	switch(state)
 	{
-		case STATE_NEW:         return DPNERR_UNINITIALIZED;
-		case STATE_INITIALISED: break;
-		case STATE_HOSTING:     return DPNERR_HOSTING;
-		case STATE_CONNECTING:  return DPNERR_CONNECTING;
-		case STATE_CONNECTED:   return DPNERR_ALREADYCONNECTED;
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         break;
+		case STATE_HOSTING:             return DPNERR_HOSTING;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		case STATE_CONNECTED:           return DPNERR_ALREADYCONNECTED;
 	}
 	
 	application_guid = pdnAppDesc->guidApplication;
@@ -401,7 +402,7 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 	connect_ctx    = pvAsyncContext;
 	connect_handle = (dwFlags & DPNCONNECT_SYNC) ? 0 : handle_alloc.new_connect();
 	
-	state = STATE_CONNECTING;
+	state = STATE_CONNECTING_TO_HOST;
 	
 	if(!peer_connect(Peer::PS_CONNECTING_HOST, r_ipaddr, r_port))
 	{
@@ -422,7 +423,7 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 	
 	if(dwFlags & DPNCONNECT_SYNC)
 	{
-		connect_cv.wait(l, [this]() { return (state != STATE_CONNECTING && state != STATE_CONNECT_FAILED); });
+		connect_cv.wait(l, [this]() { return (state != STATE_CONNECTING_TO_HOST && state != STATE_CONNECTING_TO_PEERS && state != STATE_CONNECT_FAILED); });
 		return connect_result;
 	}
 	else{
@@ -437,12 +438,13 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 	
 	switch(state)
 	{
-		case STATE_NEW:            return DPNERR_UNINITIALIZED;
-		case STATE_INITIALISED:    return DPNERR_NOTREADY;
-		case STATE_HOSTING:        break;
-		case STATE_CONNECTING:     return DPNERR_NOTREADY;
-		case STATE_CONNECT_FAILED: return DPNERR_NOTREADY;
-		case STATE_CONNECTED:      break;
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOTREADY;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_NOTREADY;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_NOTREADY;
+		case STATE_CONNECT_FAILED:      return DPNERR_NOTREADY;
+		case STATE_CONNECTED:           break;
 	}
 	
 	if(dwFlags & DPNSEND_COMPLETEONPROCESS)
@@ -702,11 +704,12 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 {
 	switch(state)
 	{
-		case STATE_NEW:         return DPNERR_UNINITIALIZED;
-		case STATE_INITIALISED: break;
-		case STATE_HOSTING:     return DPNERR_ALREADYCONNECTED;
-		case STATE_CONNECTING:  return DPNERR_CONNECTING;
-		case STATE_CONNECTED:   return DPNERR_ALREADYCONNECTED;
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         break;
+		case STATE_HOSTING:             return DPNERR_ALREADYCONNECTED;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		case STATE_CONNECTED:           return DPNERR_ALREADYCONNECTED;
 	}
 	
 	if(pdnAppDesc->dwSize != sizeof(DPN_APPLICATION_DESC))
@@ -904,11 +907,12 @@ HRESULT DirectPlay8Peer::GetApplicationDesc(DPN_APPLICATION_DESC* CONST pAppDesc
 	
 	switch(state)
 	{
-		case STATE_NEW:        return DPNERR_UNINITIALIZED;
-		case STATE_HOSTING:    break;
-		case STATE_CONNECTED:  break;
-		case STATE_CONNECTING: return DPNERR_CONNECTING;
-		default:               return DPNERR_NOCONNECTION;
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTED:           break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		default:                        return DPNERR_NOCONNECTION;
 	}
 	
 	DWORD required_size = sizeof(DPN_APPLICATION_DESC)
@@ -1376,14 +1380,15 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 	
 	switch(state)
 	{
-		case STATE_NEW:            return DPNERR_UNINITIALIZED;
-		case STATE_INITIALISED:    break;
-		case STATE_HOSTING:        was_hosting = true; break;
-		case STATE_CONNECTING:     break;
-		case STATE_CONNECT_FAILED: break;
-		case STATE_CONNECTED:      was_connected = true; break;
-		case STATE_CLOSING:        return DPNERR_ALREADYCLOSING;
-		case STATE_TERMINATED:     break;
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         break;
+		case STATE_HOSTING:             was_hosting = true; break;
+		case STATE_CONNECTING_TO_HOST:  break;
+		case STATE_CONNECTING_TO_PEERS: break;
+		case STATE_CONNECT_FAILED:      break;
+		case STATE_CONNECTED:           was_connected = true; break;
+		case STATE_CLOSING:             return DPNERR_ALREADYCLOSING;
+		case STATE_TERMINATED:          break;
 	}
 	
 	/* Signal all EnumHosts() calls to complete. */
@@ -1617,12 +1622,13 @@ HRESULT DirectPlay8Peer::GetPlayerContext(CONST DPNID dpnid,PVOID* CONST ppvPlay
 	
 	switch(state)
 	{
-		case STATE_NEW:            return DPNERR_UNINITIALIZED;
-		case STATE_INITIALISED:    return DPNERR_NOTREADY;
-		case STATE_HOSTING:        break;
-		case STATE_CONNECTING:     return DPNERR_NOTREADY;
-		case STATE_CONNECT_FAILED: return DPNERR_NOTREADY;
-		case STATE_CONNECTED:      break;
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOTREADY;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_NOTREADY;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_NOTREADY;
+		case STATE_CONNECT_FAILED:      return DPNERR_NOTREADY;
+		case STATE_CONNECTED:           break;
 	}
 	
 	if(dpnid == local_player_id)
@@ -1939,9 +1945,14 @@ void DirectPlay8Peer::io_peer_triggered(unsigned int peer_id)
 		return;
 	}
 	
-	if(peer->state == Peer::PS_CONNECTING_HOST || peer->state == Peer::PS_CONNECTING_PEER)
+	if(peer->state == Peer::PS_CONNECTING_HOST)
 	{
-		assert(state == STATE_CONNECTING);
+		assert(state == STATE_CONNECTING_TO_HOST);
+		io_peer_connected(l, peer_id);
+	}
+	else if(peer->state == Peer::PS_CONNECTING_PEER)
+	{
+		assert(state == STATE_CONNECTING_TO_PEERS);
 		io_peer_connected(l, peer_id);
 	}
 	else{
@@ -2593,12 +2604,12 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 		
 		RENEW_PEER_OR_RETURN();
 	}
-	else if(state == STATE_CONNECTING && (peer->state == Peer::PS_CONNECTING_HOST || peer->state == Peer::PS_REQUESTING_HOST))
+	else if(state == STATE_CONNECTING_TO_HOST && (peer->state == Peer::PS_CONNECTING_HOST || peer->state == Peer::PS_REQUESTING_HOST))
 	{
 		connect_fail(l, outstanding_op_result, NULL, 0);
 		RENEW_PEER_OR_RETURN();
 	}
-	else if(state == STATE_CONNECTING && (peer->state == Peer::PS_CONNECTING_PEER || peer->state == Peer::PS_REQUESTING_PEER))
+	else if(state == STATE_CONNECTING_TO_PEERS && (peer->state == Peer::PS_CONNECTING_PEER || peer->state == Peer::PS_REQUESTING_PEER))
 	{
 		connect_fail(l, DPNERR_PLAYERNOTREACHABLE, NULL, 0);
 		RENEW_PEER_OR_RETURN();
@@ -2988,7 +2999,7 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 		return;
 	}
 	
-	assert(state == STATE_CONNECTING);
+	assert(state == STATE_CONNECTING_TO_HOST);
 	
 	instance_guid = pd.get_guid(0);
 	
@@ -3050,6 +3061,8 @@ void DirectPlay8Peer::handle_host_connect_ok(std::unique_lock<std::mutex> &l, un
 	
 	peer->state = Peer::PS_CONNECTED;
 	
+	state = STATE_CONNECTING_TO_PEERS;
+	
 	{
 		DPNMSG_CREATE_PLAYER cp;
 		memset(&cp, 0, sizeof(cp));
@@ -3110,7 +3123,7 @@ void DirectPlay8Peer::handle_host_connect_fail(std::unique_lock<std::mutex> &l, 
 		return;
 	}
 	
-	assert(state == STATE_CONNECTING);
+	assert(state == STATE_CONNECTING_TO_HOST);
 	
 	DWORD       hResultCode                = DPNERR_GENERIC;
 	const void *pvApplicationReplyData     = NULL;
@@ -3249,7 +3262,7 @@ void DirectPlay8Peer::handle_connect_peer_ok(std::unique_lock<std::mutex> &l, un
 		return;
 	}
 	
-	assert(state == STATE_CONNECTING);
+	assert(state == STATE_CONNECTING_TO_PEERS);
 	
 	peer->player_name = pd.get_wstring(0);
 	
@@ -3299,7 +3312,7 @@ void DirectPlay8Peer::handle_connect_peer_fail(std::unique_lock<std::mutex> &l, 
 		return;
 	}
 	
-	assert(state == STATE_CONNECTING);
+	assert(state == STATE_CONNECTING_TO_PEERS);
 	
 	DWORD hResultCode = DPNERR_GENERIC;
 	
@@ -3517,7 +3530,7 @@ void DirectPlay8Peer::handle_appdesc(std::unique_lock<std::mutex> &l, unsigned i
 */
 void DirectPlay8Peer::connect_check(std::unique_lock<std::mutex> &l)
 {
-	assert(state == STATE_CONNECTING);
+	assert(state == STATE_CONNECTING_TO_HOST || state == STATE_CONNECTING_TO_PEERS);
 	
 	/* Search for any outgoing connections we have initiated that haven't
 	 * completed or failed yet.
@@ -3571,11 +3584,32 @@ void DirectPlay8Peer::connect_check(std::unique_lock<std::mutex> &l)
 */
 void DirectPlay8Peer::connect_fail(std::unique_lock<std::mutex> &l, HRESULT hResultCode, const void *pvApplicationReplyData, DWORD dwApplicationReplyDataSize)
 {
-	assert(state == STATE_CONNECTING);
+	assert(state == STATE_CONNECTING_TO_HOST || state == STATE_CONNECTING_TO_PEERS);
+	
+	State old_state = state;
 	
 	state = STATE_CONNECT_FAILED;
 	
 	close_everything_now(l, DPNERR_GENERIC, DPNDESTROYPLAYERREASON_CONNECTIONLOST);
+	
+	if(old_state == STATE_CONNECTING_TO_PEERS)
+	{
+		/* If we were connecting to peers, then we had gotten far enough to have
+		 * raised DPNMSG_CREATE_PLAYER for the local player. Undo it.
+		*/
+		
+		DPNMSG_DESTROY_PLAYER dp;
+		memset(&dp, 0, sizeof(dp));
+		
+		dp.dwSize          = sizeof(DPNMSG_DESTROY_PLAYER);
+		dp.dpnidPlayer     = local_player_id;
+		dp.pvPlayerContext = local_player_ctx;
+		dp.dwReason        = DPNDESTROYPLAYERREASON_NORMAL;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+		l.lock();
+	}
 	
 	DPNMSG_CONNECT_COMPLETE cc;
 	memset(&cc, 0, sizeof(cc));
