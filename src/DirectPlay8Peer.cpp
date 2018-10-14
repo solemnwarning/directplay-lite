@@ -185,6 +185,8 @@ HRESULT DirectPlay8Peer::EnumServiceProviders(CONST GUID* CONST pguidServiceProv
 
 HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONST DWORD dwFlags)
 {
+	std::unique_lock<std::mutex> l(lock);
+	
 	if(dwFlags & DPNCANCEL_PLAYER_SENDS)
 	{
 		/* Cancel sends to player ID in hAsyncHandle */
@@ -196,8 +198,6 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 		
 		if(dwFlags & (DPNCANCEL_ENUM | DPNCANCEL_ALL_OPERATIONS))
 		{
-			std::unique_lock<std::mutex> l(lock);
-			
 			for(auto ei = host_enums.begin(); ei != host_enums.end(); ++ei)
 			{
 				ei->second.cancel();
@@ -206,7 +206,11 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 		
 		if(dwFlags & (DPNCANCEL_CONNECT | DPNCANCEL_ALL_OPERATIONS))
 		{
-			/* TODO: Cancel in-progress connect. */
+			if((state == STATE_CONNECTING_TO_HOST || state == STATE_CONNECTING_TO_PEERS) && connect_handle != 0)
+			{
+				/* We have an ongoing asynchronous connection. */
+				connect_fail(l, DPNERR_USERCANCEL, NULL, 0);
+			}
 		}
 		
 		if(dwFlags & DPNCANCEL_ALL_OPERATIONS)
@@ -218,8 +222,6 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 	}
 	else if((hAsyncHandle & AsyncHandleAllocator::TYPE_MASK) == AsyncHandleAllocator::TYPE_ENUM)
 	{
-		std::unique_lock<std::mutex> l(lock);
-		
 		auto ei = host_enums.find(hAsyncHandle);
 		if(ei == host_enums.end())
 		{
@@ -233,7 +235,20 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 	}
 	else if((hAsyncHandle & AsyncHandleAllocator::TYPE_MASK) == AsyncHandleAllocator::TYPE_CONNECT)
 	{
-		UNIMPLEMENTED("DirectPlay8Peer::CancelAsyncOperation");
+		if(hAsyncHandle == connect_handle)
+		{
+			if(state == STATE_CONNECTING_TO_HOST || state == STATE_CONNECTING_TO_PEERS)
+			{
+				connect_fail(l, DPNERR_USERCANCEL, NULL, 0);
+				return S_OK;
+			}
+			else{
+				return DPNERR_CANNOTCANCEL;
+			}
+		}
+		else{
+			return DPNERR_INVALIDHANDLE;
+		}
 	}
 	else if((hAsyncHandle & AsyncHandleAllocator::TYPE_MASK) == AsyncHandleAllocator::TYPE_SEND)
 	{
@@ -1413,6 +1428,15 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 	{
 		closesocket(udp_socket);
 		udp_socket = -1;
+	}
+	
+	if(state == STATE_CONNECTING_TO_HOST || state == STATE_CONNECTING_TO_PEERS)
+	{
+		/* connect_fail() will change the state to STATE_CONNECT_FAILED, then finally to
+		 * STATE_INITIALISED before it returns, this doesn't matter as we return it to
+		 * STATE_CLOSING before the lock is released again.
+		*/
+		connect_fail(l, DPNERR_NOCONNECTION, NULL, 0);
 	}
 	
 	state = STATE_CLOSING;

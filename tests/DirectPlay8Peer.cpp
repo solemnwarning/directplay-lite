@@ -1873,6 +1873,286 @@ TEST(DirectPlay8Peer, ConnectAsyncFail)
 	EXPECT_EQ(p1_seq, 1);
 }
 
+TEST(DirectPlay8Peer, ConnectAsyncCancelByHandle)
+{
+	/* We set up a host which blocks when processing DPN_MSGID_INDICATE_CONNECT, causing any
+	 * attempted Connect() by a peer to take a while, giving us time to cancel it.
+	*/
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_INDICATE_CONNECT)
+			{
+				Sleep(2000);
+			}
+			
+			return DPN_OK;
+		});
+	
+	TestPeer peer1("peer1");
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	DPNHANDLE p1_connect_handle;
+	ASSERT_EQ(peer1->Connect(
+		&connect_to_app,     /* pdnAppDesc */
+		connect_to_addr,     /* pHostAddr */
+		NULL,                /* pDeviceInfo */
+		NULL,                /* pdnSecurity */
+		NULL,                /* pdnCredentials */
+		NULL,                /* pvUserConnectData */
+		0,                   /* dwUserConnectDataSize */
+		NULL,                /* pvPlayerContext */
+		(void*)(0xABCD),     /* pvAsyncContext */
+		&p1_connect_handle,  /* phAsyncHandle */
+		0                    /* dwFlags */
+	), DPNSUCCESS_PENDING);
+	
+	peer1.expect_begin();
+	peer1.expect_push([&p1_connect_handle](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CONNECT_COMPLETE);
+		
+		if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+		{
+			DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+			
+			EXPECT_EQ(cc->dwSize,        sizeof(DPNMSG_CONNECT_COMPLETE));
+			EXPECT_EQ(cc->hAsyncOp,      p1_connect_handle);
+			EXPECT_EQ(cc->pvUserContext, (void*)(0xABCD));
+			EXPECT_EQ(cc->hResultCode,   DPNERR_USERCANCEL);
+			
+			EXPECT_EQ(cc->pvApplicationReplyData,     (PVOID)(NULL));
+			EXPECT_EQ(cc->dwApplicationReplyDataSize, 0);
+		}
+		
+		return DPN_OK;
+	});
+	
+	ASSERT_EQ(peer1->CancelAsyncOperation(p1_connect_handle, 0), S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+}
+
+TEST(DirectPlay8Peer, ConnectAsyncCancelAllConnects)
+{
+	/* We set up a host which blocks when processing DPN_MSGID_INDICATE_CONNECT, causing any
+	 * attempted Connect() by a peer to take a while, giving us time to cancel it.
+	*/
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_INDICATE_CONNECT)
+			{
+				Sleep(2000);
+			}
+			
+			return DPN_OK;
+		});
+	
+	TestPeer peer1("peer1");
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	DPNHANDLE p1_connect_handle;
+	ASSERT_EQ(peer1->Connect(
+		&connect_to_app,     /* pdnAppDesc */
+		connect_to_addr,     /* pHostAddr */
+		NULL,                /* pDeviceInfo */
+		NULL,                /* pdnSecurity */
+		NULL,                /* pdnCredentials */
+		NULL,                /* pvUserConnectData */
+		0,                   /* dwUserConnectDataSize */
+		NULL,                /* pvPlayerContext */
+		(void*)(0xABCD),     /* pvAsyncContext */
+		&p1_connect_handle,  /* phAsyncHandle */
+		0                    /* dwFlags */
+	), DPNSUCCESS_PENDING);
+	
+	peer1.expect_begin();
+	peer1.expect_push([&p1_connect_handle](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CONNECT_COMPLETE);
+		
+		if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+		{
+			DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+			
+			EXPECT_EQ(cc->dwSize,        sizeof(DPNMSG_CONNECT_COMPLETE));
+			EXPECT_EQ(cc->hAsyncOp,      p1_connect_handle);
+			EXPECT_EQ(cc->pvUserContext, (void*)(0xABCD));
+			EXPECT_EQ(cc->hResultCode,   DPNERR_USERCANCEL);
+			
+			EXPECT_EQ(cc->pvApplicationReplyData,     (PVOID)(NULL));
+			EXPECT_EQ(cc->dwApplicationReplyDataSize, 0);
+		}
+		
+		return DPN_OK;
+	});
+	
+	ASSERT_EQ(peer1->CancelAsyncOperation(NULL, DPNCANCEL_CONNECT), S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+}
+
+TEST(DirectPlay8Peer, ConnectAsyncCancelAllOperations)
+{
+	/* We set up a host which blocks when processing DPN_MSGID_INDICATE_CONNECT, causing any
+	 * attempted Connect() by a peer to take a while, giving us time to cancel it.
+	*/
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_INDICATE_CONNECT)
+			{
+				Sleep(2000);
+			}
+			
+			return DPN_OK;
+		});
+	
+	TestPeer peer1("peer1");
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	DPNHANDLE p1_connect_handle;
+	ASSERT_EQ(peer1->Connect(
+		&connect_to_app,     /* pdnAppDesc */
+		connect_to_addr,     /* pHostAddr */
+		NULL,                /* pDeviceInfo */
+		NULL,                /* pdnSecurity */
+		NULL,                /* pdnCredentials */
+		NULL,                /* pvUserConnectData */
+		0,                   /* dwUserConnectDataSize */
+		NULL,                /* pvPlayerContext */
+		(void*)(0xABCD),     /* pvAsyncContext */
+		&p1_connect_handle,  /* phAsyncHandle */
+		0                    /* dwFlags */
+	), DPNSUCCESS_PENDING);
+	
+	peer1.expect_begin();
+	peer1.expect_push([&p1_connect_handle](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CONNECT_COMPLETE);
+		
+		if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+		{
+			DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+			
+			EXPECT_EQ(cc->dwSize,        sizeof(DPNMSG_CONNECT_COMPLETE));
+			EXPECT_EQ(cc->hAsyncOp,      p1_connect_handle);
+			EXPECT_EQ(cc->pvUserContext, (void*)(0xABCD));
+			EXPECT_EQ(cc->hResultCode,   DPNERR_USERCANCEL);
+			
+			EXPECT_EQ(cc->pvApplicationReplyData,     (PVOID)(NULL));
+			EXPECT_EQ(cc->dwApplicationReplyDataSize, 0);
+		}
+		
+		return DPN_OK;
+	});
+	
+	ASSERT_EQ(peer1->CancelAsyncOperation(NULL, DPNCANCEL_ALL_OPERATIONS), S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+}
+
+TEST(DirectPlay8Peer, ConnectAsyncCancelByClose)
+{
+	/* We set up a host which blocks when processing DPN_MSGID_INDICATE_CONNECT, causing any
+	 * attempted Connect() by a peer to take a while, giving us time to cancel it.
+	*/
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_INDICATE_CONNECT)
+			{
+				Sleep(2000);
+			}
+			
+			return DPN_OK;
+		});
+	
+	TestPeer peer1("peer1");
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	DPNHANDLE p1_connect_handle;
+	ASSERT_EQ(peer1->Connect(
+		&connect_to_app,     /* pdnAppDesc */
+		connect_to_addr,     /* pHostAddr */
+		NULL,                /* pDeviceInfo */
+		NULL,                /* pdnSecurity */
+		NULL,                /* pdnCredentials */
+		NULL,                /* pvUserConnectData */
+		0,                   /* dwUserConnectDataSize */
+		NULL,                /* pvPlayerContext */
+		(void*)(0xABCD),     /* pvAsyncContext */
+		&p1_connect_handle,  /* phAsyncHandle */
+		0                    /* dwFlags */
+	), DPNSUCCESS_PENDING);
+	
+	peer1.expect_begin();
+	peer1.expect_push([&p1_connect_handle](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CONNECT_COMPLETE);
+		
+		if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+		{
+			DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+			
+			EXPECT_EQ(cc->dwSize,        sizeof(DPNMSG_CONNECT_COMPLETE));
+			EXPECT_EQ(cc->hAsyncOp,      p1_connect_handle);
+			EXPECT_EQ(cc->pvUserContext, (void*)(0xABCD));
+			EXPECT_EQ(cc->hResultCode,   DPNERR_NOCONNECTION);
+			
+			EXPECT_EQ(cc->pvApplicationReplyData,     (PVOID)(NULL));
+			EXPECT_EQ(cc->dwApplicationReplyDataSize, 0);
+		}
+		
+		return DPN_OK;
+	});
+	
+	peer1->Close(DPNCLOSE_IMMEDIATE);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+}
+
 TEST(DirectPlay8Peer, ConnectToIPX)
 {
 	std::atomic<bool> testing(true);
