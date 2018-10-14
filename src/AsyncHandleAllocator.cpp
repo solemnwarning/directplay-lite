@@ -23,7 +23,7 @@ DPNHANDLE AsyncHandleAllocator::new_enum()
 
 DPNHANDLE AsyncHandleAllocator::new_connect()
 {
-	DPNHANDLE handle = next_connect_id++ | TYPE_ENUM;
+	DPNHANDLE handle = next_connect_id++ | TYPE_CONNECT;
 	
 	next_connect_id &= ~TYPE_MASK;
 	if(next_connect_id == 0)
@@ -36,7 +36,7 @@ DPNHANDLE AsyncHandleAllocator::new_connect()
 
 DPNHANDLE AsyncHandleAllocator::new_send()
 {
-	DPNHANDLE handle = next_send_id++ | TYPE_ENUM;
+	DPNHANDLE handle = next_send_id++ | TYPE_SEND;
 	
 	next_send_id &= ~TYPE_MASK;
 	if(next_send_id == 0)
@@ -49,7 +49,7 @@ DPNHANDLE AsyncHandleAllocator::new_send()
 
 DPNHANDLE AsyncHandleAllocator::new_pinfo()
 {
-	DPNHANDLE handle = next_pinfo_id++ | TYPE_ENUM;
+	DPNHANDLE handle = next_pinfo_id++ | TYPE_PINFO;
 	
 	next_pinfo_id &= ~TYPE_MASK;
 	if(next_pinfo_id == 0)

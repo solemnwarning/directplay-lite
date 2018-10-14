@@ -27,10 +27,10 @@ class AsyncHandleAllocator
 	public:
 		static const DPNHANDLE TYPE_MASK    = 0x1C000000;
 		
-		static const DPNHANDLE TYPE_ENUM    = 0x000000000; /* EnumHosts() */
-		static const DPNHANDLE TYPE_CONNECT = 0x040000000; /* Connect() */
-		static const DPNHANDLE TYPE_SEND    = 0x080000000; /* SendTo() */
-		static const DPNHANDLE TYPE_PINFO   = 0x0C0000000; /* SetPeerInfo() */
+		static const DPNHANDLE TYPE_ENUM    = 0x00000000; /* EnumHosts() */
+		static const DPNHANDLE TYPE_CONNECT = 0x04000000; /* Connect() */
+		static const DPNHANDLE TYPE_SEND    = 0x08000000; /* SendTo() */
+		static const DPNHANDLE TYPE_PINFO   = 0x0C000000; /* SetPeerInfo() */
 		
 		AsyncHandleAllocator();
 		
