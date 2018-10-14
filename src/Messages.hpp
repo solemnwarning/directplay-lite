@@ -135,4 +135,18 @@
  * DWORD - Error code (DPNERR_HOSTREJECTEDCONNECTION, DPNERR_INVALIDAPPLICATION, etc)
 */
 
+#define DPLITE_MSGID_DESTROY_PEER 13
+
+/* Peer has been destroyed by the host calling IDirectPlay8Peer::DestroyPeer()
+ *
+ * Sent from host to peer being terminated, to all other peers and from the terminated peer to each
+ * peer when it closes the connection.
+ *
+ * The victim peer must remove itself from the session after receiving this message. All other
+ * peers will eject it when they receive notifcation from the server.
+ *
+ * DWORD - Player ID of peer being destroyed
+ * DATA  - DPNMSG_TERMINATE_SESSION.pvTerminateData (only from host to victim)
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */
