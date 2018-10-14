@@ -1093,7 +1093,70 @@ HRESULT DirectPlay8Peer::GetGroupInfo(CONST DPNID dpnid, DPN_GROUP_INFO* CONST p
 
 HRESULT DirectPlay8Peer::EnumPlayersAndGroups(DPNID* CONST prgdpnid, DWORD* CONST pcdpnid, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::EnumPlayersAndGroups");
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
+	{
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOCONNECTION;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		case STATE_CONNECT_FAILED:      return DPNERR_CONNECTING;
+		case STATE_CONNECTED:           break;
+		case STATE_CLOSING:             return DPNERR_CONNECTIONLOST;
+		case STATE_TERMINATED:          return DPNERR_CONNECTIONLOST;
+	}
+	
+	DWORD num_results = 0;
+	
+	if(dwFlags & DPNENUM_PLAYERS)
+	{
+		++num_results; /* For local peer. */
+		
+		for(auto p = peers.begin(); p != peers.end(); ++p)
+		{
+			Peer *peer = p->second;
+			
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				++num_results;
+			}
+		}
+	}
+	
+	if(dwFlags & DPNENUM_GROUPS)
+	{
+		UNIMPLEMENTED("DirectPlay8Peer::EnumPlayersAndGroups(DPENUM_GROUPS)");
+	}
+	
+	if(*pcdpnid < num_results)
+	{
+		*pcdpnid = num_results;
+		return DPNERR_BUFFERTOOSMALL;
+	}
+	
+	DWORD next_idx = 0;
+	
+	if(dwFlags & DPNENUM_PLAYERS)
+	{
+		prgdpnid[next_idx++] = local_player_id;
+		
+		for(auto p = peers.begin(); p != peers.end(); ++p)
+		{
+			Peer *peer = p->second;
+			
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				prgdpnid[next_idx++] = peer->player_id;
+			}
+		}
+	}
+	
+	assert(next_idx == num_results);
+	*pcdpnid = next_idx;
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::EnumGroupMembers(CONST DPNID dpnid, DPNID* CONST prgdpnid, DWORD* CONST pcdpnid, CONST DWORD dwFlags)

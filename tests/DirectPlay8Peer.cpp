@@ -6401,3 +6401,242 @@ TEST(DirectPlay8Peer, SetPeerInfoAsyncAfterPeerConnects)
 	EXPECT_EQ(host_seq, 2);
 	EXPECT_EQ(p1_seq, 1);
 }
+
+TEST(DirectPlay8Peer, EnumPlayersTooSmall)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	TestPeer peer2("peer2");
+	ASSERT_EQ(peer2->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	DPNID buffer[2];
+	DWORD max_results = 2;
+	
+	ASSERT_EQ(host->EnumPlayersAndGroups(buffer, &max_results, DPNENUM_PLAYERS), DPNERR_BUFFERTOOSMALL);
+	EXPECT_EQ(max_results, 3);
+	
+	max_results = 2;
+	
+	ASSERT_EQ(peer1->EnumPlayersAndGroups(buffer, &max_results, DPNENUM_PLAYERS), DPNERR_BUFFERTOOSMALL);
+	EXPECT_EQ(max_results, 3);
+	
+	max_results = 2;
+	
+	ASSERT_EQ(peer2->EnumPlayersAndGroups(buffer, &max_results, DPNENUM_PLAYERS), DPNERR_BUFFERTOOSMALL);
+	EXPECT_EQ(max_results, 3);
+}
+
+TEST(DirectPlay8Peer, EnumPlayersExact)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	TestPeer peer2("peer2");
+	ASSERT_EQ(peer2->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	std::set<DPNID> expect_player_ids;
+	expect_player_ids.insert(host.first_cp_dpnidPlayer);
+	expect_player_ids.insert(peer1.first_cc_dpnidLocal);
+	expect_player_ids.insert(peer2.first_cc_dpnidLocal);
+	
+	/* host */
+	
+	DPNID h_buffer[3];
+	DWORD h_max_results = 3;
+	
+	ASSERT_EQ(host->EnumPlayersAndGroups(h_buffer, &h_max_results, DPNENUM_PLAYERS), S_OK);
+	EXPECT_EQ(h_max_results, 3);
+	
+	std::set<DPNID> h_player_ids(h_buffer, h_buffer + h_max_results);
+	EXPECT_EQ(h_player_ids, expect_player_ids);
+	
+	/* peer1 */
+	
+	DPNID p1_buffer[3];
+	DWORD p1_max_results = 3;
+	
+	ASSERT_EQ(peer1->EnumPlayersAndGroups(p1_buffer, &p1_max_results, DPNENUM_PLAYERS), S_OK);
+	EXPECT_EQ(p1_max_results, 3);
+	
+	std::set<DPNID> p1_player_ids(p1_buffer, p1_buffer + p1_max_results);
+	EXPECT_EQ(p1_player_ids, expect_player_ids);
+	
+	/* peer2 */
+	
+	DPNID p2_buffer[3];
+	DWORD p2_max_results = 3;
+	
+	ASSERT_EQ(peer2->EnumPlayersAndGroups(p2_buffer, &p2_max_results, DPNENUM_PLAYERS), S_OK);
+	EXPECT_EQ(p2_max_results, 3);
+	
+	std::set<DPNID> p2_player_ids(p2_buffer, p2_buffer + p2_max_results);
+	EXPECT_EQ(p2_player_ids, expect_player_ids);
+}
+
+TEST(DirectPlay8Peer, EnumPlayersTooBig)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	TestPeer peer2("peer2");
+	ASSERT_EQ(peer2->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	std::set<DPNID> expect_player_ids;
+	expect_player_ids.insert(host.first_cp_dpnidPlayer);
+	expect_player_ids.insert(peer1.first_cc_dpnidLocal);
+	expect_player_ids.insert(peer2.first_cc_dpnidLocal);
+	
+	/* host */
+	
+	DPNID h_buffer[5];
+	DWORD h_max_results = 5;
+	
+	ASSERT_EQ(host->EnumPlayersAndGroups(h_buffer, &h_max_results, DPNENUM_PLAYERS), S_OK);
+	EXPECT_EQ(h_max_results, 3);
+	
+	std::set<DPNID> h_player_ids(h_buffer, h_buffer + h_max_results);
+	EXPECT_EQ(h_player_ids, expect_player_ids);
+	
+	/* peer1 */
+	
+	DPNID p1_buffer[5];
+	DWORD p1_max_results = 5;
+	
+	ASSERT_EQ(peer1->EnumPlayersAndGroups(p1_buffer, &p1_max_results, DPNENUM_PLAYERS), S_OK);
+	EXPECT_EQ(p1_max_results, 3);
+	
+	std::set<DPNID> p1_player_ids(p1_buffer, p1_buffer + p1_max_results);
+	EXPECT_EQ(p1_player_ids, expect_player_ids);
+	
+	/* peer2 */
+	
+	DPNID p2_buffer[5];
+	DWORD p2_max_results = 5;
+	
+	ASSERT_EQ(peer2->EnumPlayersAndGroups(p2_buffer, &p2_max_results, DPNENUM_PLAYERS), S_OK);
+	EXPECT_EQ(p2_max_results, 3);
+	
+	std::set<DPNID> p2_player_ids(p2_buffer, p2_buffer + p2_max_results);
+	EXPECT_EQ(p2_player_ids, expect_player_ids);
+}
