@@ -1960,7 +1960,138 @@ HRESULT DirectPlay8Peer::RegisterLobby(CONST DPNHANDLE dpnHandle, struct IDirect
 
 HRESULT DirectPlay8Peer::TerminateSession(void* CONST pvTerminateData, CONST DWORD dwTerminateDataSize, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::TerminateSession");
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
+	{
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOCONNECTION;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		case STATE_CONNECT_FAILED:      return DPNERR_CONNECTING;
+		case STATE_CONNECTED:           return DPNERR_NOTHOST;
+		case STATE_CLOSING:             return DPNERR_CONNECTIONLOST;
+		case STATE_TERMINATED:          return DPNERR_HOSTTERMINATEDSESSION;
+	}
+	
+	if(discovery_socket != -1)
+	{
+		closesocket(discovery_socket);
+		discovery_socket = -1;
+	}
+	
+	if(listener_socket != -1)
+	{
+		closesocket(listener_socket);
+		listener_socket = -1;
+	}
+	
+	if(udp_socket != -1)
+	{
+		closesocket(udp_socket);
+		udp_socket = -1;
+	}
+	
+	/* First, we iterate over all the peers.
+	 *
+	 * For connected peers: Notify them of the impending doom, and add them to closing_peers
+	 * so we can raise a DPNMSG_DESTROY_PLAYER later.
+	 *
+	 * For other peers: Add them to destroy_peers, to be destroyed later.
+	 *
+	 * We defer these actions until later to ensure nothing can change the state of the peers
+	 * underneath us, as dealing with peers potentially changing state while this runs would
+	 * be rather horrible.
+	*/
+	
+	PacketSerialiser terminate_session(DPLITE_MSGID_TERMINATE_SESSION);
+	terminate_session.append_data(pvTerminateData, dwTerminateDataSize);
+	
+	std::list< std::pair<DPNID, void*> > closing_peers;
+	std::list<unsigned int> destroy_peers;
+	
+	for(auto pi = peers.begin(); pi != peers.end(); ++pi)
+	{
+		unsigned int peer_id = pi->first;
+		Peer *peer = pi->second;
+		
+		if(peer->state == Peer::PS_CONNECTED)
+		{
+			peer->sq.send(SendQueue::SEND_PRI_HIGH, terminate_session, NULL, [](std::unique_lock<std::mutex> &l, HRESULT result){});
+			peer->state = Peer::PS_CLOSING;
+			
+			closing_peers.push_back(std::make_pair(peer->player_id, peer->player_ctx));
+		}
+		else if(peer->state == Peer::PS_CLOSING)
+		{
+			/* Do nothing. We're waiting for this peer to go away. */
+		}
+		else{
+			destroy_peers.push_back(peer_id);
+		}
+	}
+	
+	state = STATE_TERMINATED;
+	
+	/* Raise DPNMSG_TERMINATE_SESSION. */
+	
+	{
+		DPNMSG_TERMINATE_SESSION ts;
+		memset(&ts, 0, sizeof(ts));
+		
+		ts.dwSize              = sizeof(DPNMSG_TERMINATE_SESSION);
+		ts.hResultCode         = DPNERR_HOSTTERMINATEDSESSION;
+		ts.pvTerminateData     = pvTerminateData;
+		ts.dwTerminateDataSize = dwTerminateDataSize;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_TERMINATE_SESSION, &ts);
+		l.lock();
+	}
+	
+	/* Raise a DPNMSG_DESTROY_PLAYER for ourself. */
+	
+	{
+		DPNMSG_DESTROY_PLAYER dp;
+		memset(&dp, 0, sizeof(dp));
+		
+		dp.dwSize          = sizeof(DPNMSG_DESTROY_PLAYER);
+		dp.dpnidPlayer     = local_player_id;
+		dp.pvPlayerContext = local_player_ctx;
+		dp.dwReason        = DPNDESTROYPLAYERREASON_SESSIONTERMINATED;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+		l.lock();
+	}
+	
+	/* Raise a DPNMSG_DESTROY_PLAYER for each connected peer. */
+	
+	for(auto cp = closing_peers.begin(); cp != closing_peers.end(); ++cp)
+	{
+		DPNMSG_DESTROY_PLAYER dp;
+		memset(&dp, 0, sizeof(dp));
+		
+		dp.dwSize          = sizeof(dp);
+		dp.dpnidPlayer     = cp->first;
+		dp.pvPlayerContext = cp->second;
+		dp.dwReason        = DPNDESTROYPLAYERREASON_SESSIONTERMINATED;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+		l.lock();
+	}
+	
+	/* Destroy any peers which weren't fully connected. */
+	
+	for(auto dp = destroy_peers.begin(); dp != destroy_peers.end();)
+	{
+		unsigned int peer_id = *dp;
+		peer_destroy(l, *dp, DPNERR_USERCANCEL, DPNDESTROYPLAYERREASON_NORMAL);
+	}
+	
+	return S_OK;
 }
 
 DirectPlay8Peer::Peer *DirectPlay8Peer::get_peer_by_peer_id(unsigned int peer_id)
@@ -2506,6 +2637,12 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 					case DPLITE_MSGID_DESTROY_PEER:
 					{
 						handle_destroy_peer(l, peer_id, *pd);
+						break;
+					}
+					
+					case DPLITE_MSGID_TERMINATE_SESSION:
+					{
+						handle_terminate_session(l, peer_id, *pd);
 						break;
 					}
 					
@@ -3795,6 +3932,103 @@ void DirectPlay8Peer::handle_destroy_peer(std::unique_lock<std::mutex> &l, unsig
 	catch(const PacketDeserialiser::Error &e)
 	{
 		log_printf("Received invalid DPLITE_MSGID_DESTROY_PEER from peer %u: %s",
+			peer_id, e.what());
+	}
+}
+
+void DirectPlay8Peer::handle_terminate_session(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		std::pair<const void*, size_t> terminate_data = pd.get_data(0);
+		
+		if(peer->state != Peer::PS_CONNECTED)
+		{
+			log_printf("Received unexpected DPLITE_MSGID_TERMINATE_SESSION from peer %u, in state %u",
+				peer_id, (unsigned)(peer->state));
+			return;
+		}
+		
+		/* host_player_id must be initialised by this point, as the host is always the
+		 * first peer to enter state PS_CONNECTED, initialising it in the process.
+		*/
+		
+		if(peer->player_id != host_player_id)
+		{
+			log_printf("Received unexpected DPLITE_MSGID_TERMINATE_SESSION from non-host peer %u",
+				peer_id);
+			return;
+		}
+		
+		state = STATE_TERMINATED;
+		
+		DPNMSG_TERMINATE_SESSION ts;
+		memset(&ts, 0, sizeof(ts));
+		
+		ts.dwSize              = sizeof(DPNMSG_TERMINATE_SESSION);
+		ts.hResultCode         = DPNERR_HOSTTERMINATEDSESSION;
+		ts.pvTerminateData     = (void*)(terminate_data.first); /* TODO: Make non-const copy? */
+		ts.dwTerminateDataSize = terminate_data.second;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_TERMINATE_SESSION, &ts);
+		l.lock();
+		
+		DPNMSG_DESTROY_PLAYER dp;
+		memset(&dp, 0, sizeof(dp));
+		
+		dp.dwSize          = sizeof(DPNMSG_DESTROY_PLAYER);
+		dp.dpnidPlayer     = local_player_id;
+		dp.pvPlayerContext = local_player_ctx;
+		dp.dwReason        = DPNDESTROYPLAYERREASON_SESSIONTERMINATED;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+		l.lock();
+		
+		for(auto pi = peers.begin(); pi != peers.end();)
+		{
+			unsigned int peer_id = pi->first;
+			Peer *peer = pi->second;
+			
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				DPNMSG_DESTROY_PLAYER dp;
+				memset(&dp, 0, sizeof(dp));
+				
+				dp.dwSize          = sizeof(dp);
+				dp.dpnidPlayer     = peer->player_id;
+				dp.pvPlayerContext = peer->player_ctx;
+				dp.dwReason        = DPNDESTROYPLAYERREASON_SESSIONTERMINATED;
+				
+				peer->state = Peer::PS_CLOSING;
+				
+				/* Wake up a worker to deal with closing the connection. */
+				SetEvent(peer->event);
+				
+				l.unlock();
+				message_handler(message_handler_ctx, DPN_MSGID_DESTROY_PLAYER, &dp);
+				l.lock();
+				
+				pi = peers.begin();
+			}
+			else if(peer->state == Peer::PS_CLOSING)
+			{
+				/* Do nothing. We're waiting for this peer to go away. */
+				++pi;
+			}
+			else{
+				peer_destroy(l, peer_id, DPNERR_USERCANCEL, DPNDESTROYPLAYERREASON_NORMAL);
+				
+				pi = peers.begin();
+			}
+		}
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		log_printf("Received invalid DPLITE_MSGID_TERMINATE_SESSION from peer %u: %s",
 			peer_id, e.what());
 	}
 }

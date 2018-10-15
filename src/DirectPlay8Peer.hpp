@@ -212,6 +212,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_ack(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_appdesc(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_destroy_peer(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_terminate_session(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		
 		void connect_check(std::unique_lock<std::mutex> &l);
 		void connect_fail(std::unique_lock<std::mutex> &l, HRESULT hResultCode, const void *pvApplicationReplyData, DWORD dwApplicationReplyDataSize);

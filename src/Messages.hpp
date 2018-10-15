@@ -149,4 +149,12 @@
  * DATA  - DPNMSG_TERMINATE_SESSION.pvTerminateData (only from host to victim)
 */
 
+#define DPLITE_MSGID_TERMINATE_SESSION 14
+
+/* Host is destroying the session. This message is sent from only the host and to all peers in the
+ * session simultaneously.
+ *
+ * DATA - pvTerminateData passed to IDirectPlay8Peer::TerminateSession()
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */
