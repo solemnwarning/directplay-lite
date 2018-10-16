@@ -103,6 +103,8 @@ ULONG DirectPlay8Peer::Release(void)
 
 HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSAGEHANDLER pfn, CONST DWORD dwFlags)
 {
+	std::unique_lock<std::mutex> l(lock);
+	
 	if(state != STATE_NEW)
 	{
 		return DPNERR_ALREADYINITIALIZED;
@@ -717,6 +719,8 @@ HRESULT DirectPlay8Peer::GetSendQueueInfo(CONST DPNID dpnid, DWORD* CONST pdwNum
 
 HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDirectPlay8Address **CONST prgpDeviceInfo, CONST DWORD cDeviceInfo, CONST DPN_SECURITY_DESC* CONST pdnSecurity, CONST DPN_SECURITY_CREDENTIALS* CONST pdnCredentials, void* CONST pvPlayerContext, CONST DWORD dwFlags)
 {
+	std::unique_lock<std::mutex> l(lock);
+	
 	switch(state)
 	{
 		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
@@ -1539,6 +1543,8 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 
 HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc, IDirectPlay8Address* CONST pAddrHost, IDirectPlay8Address* CONST pDeviceInfo,PVOID CONST pUserEnumData, CONST DWORD dwUserEnumDataSize, CONST DWORD dwEnumCount, CONST DWORD dwRetryInterval, CONST DWORD dwTimeOut,PVOID CONST pvUserContext, DPNHANDLE* CONST pAsyncHandle, CONST DWORD dwFlags)
 {
+	std::unique_lock<std::mutex> l(lock);
+	
 	if(state == STATE_NEW)
 	{
 		return DPNERR_UNINITIALIZED;
@@ -1562,6 +1568,7 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 					result = r;
 				});
 			
+			l.unlock();
 			he.wait();
 			
 			return result;
@@ -1570,8 +1577,6 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 			DPNHANDLE handle = handle_alloc.new_enum();
 			
 			*pAsyncHandle = handle;
-			
-			std::unique_lock<std::mutex> l(lock);
 			
 			host_enums.emplace(
 				std::piecewise_construct,
