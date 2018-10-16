@@ -192,7 +192,74 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 	if(dwFlags & DPNCANCEL_PLAYER_SENDS)
 	{
 		/* Cancel sends to player ID in hAsyncHandle */
-		UNIMPLEMENTED("DirectPlay8Peer::CancelAsyncOperation");
+		
+		if(hAsyncHandle == local_player_id)
+		{
+			/* DirectX permits cancelling pending messages to the local player, but we
+			 * don't queue loopback messages. So just do nothing.
+			*/
+			return S_OK;
+		}
+		
+		Peer *peer = get_peer_by_player_id(hAsyncHandle);
+		if(peer == NULL)
+		{
+			/* TODO: Is this the correct error? */
+			return DPNERR_INVALIDPLAYER;
+		}
+		
+		for(; peer != NULL; peer = get_peer_by_player_id(hAsyncHandle))
+		{
+			/* The DPNCANCEL_PLAYER_SENDS_* flags are horrible.
+			 *
+			 * Each priority-specific flag includes the DPNCANCEL_PLAYER_SENDS bit, so
+			 * we need to check if ONLY the DPNCANCEL_PLAYER_SENDS bit is set, or if
+			 * the priority-specific bit is set.
+			*/
+			
+			DWORD send_flags = (dwFlags &
+				( DPNCANCEL_PLAYER_SENDS_PRIORITY_LOW
+				| DPNCANCEL_PLAYER_SENDS_PRIORITY_NORMAL
+				| DPNCANCEL_PLAYER_SENDS_PRIORITY_HIGH));
+			
+			if(send_flags == DPNCANCEL_PLAYER_SENDS || (send_flags & DPNCANCEL_PLAYER_SENDS_PRIORITY_LOW) == DPNCANCEL_PLAYER_SENDS_PRIORITY_LOW)
+			{
+				SendQueue::SendOp *sqop = peer->sq.remove_queued_by_priority(SendQueue::SEND_PRI_LOW);
+				if(sqop != NULL)
+				{
+					sqop->invoke_callback(l, DPNERR_USERCANCEL);
+					delete sqop;
+					continue;
+				}
+			}
+			
+			if(send_flags == DPNCANCEL_PLAYER_SENDS || (send_flags & DPNCANCEL_PLAYER_SENDS_PRIORITY_NORMAL) == DPNCANCEL_PLAYER_SENDS_PRIORITY_NORMAL)
+			{
+				SendQueue::SendOp *sqop = peer->sq.remove_queued_by_priority(SendQueue::SEND_PRI_MEDIUM);
+				if(sqop != NULL)
+				{
+					sqop->invoke_callback(l, DPNERR_USERCANCEL);
+					delete sqop;
+					continue;
+				}
+			}
+			
+			if(send_flags == DPNCANCEL_PLAYER_SENDS || (send_flags & DPNCANCEL_PLAYER_SENDS_PRIORITY_HIGH) == DPNCANCEL_PLAYER_SENDS_PRIORITY_HIGH)
+			{
+				SendQueue::SendOp *sqop = peer->sq.remove_queued_by_priority(SendQueue::SEND_PRI_HIGH);
+				if(sqop != NULL)
+				{
+					sqop->invoke_callback(l, DPNERR_USERCANCEL);
+					delete sqop;
+					continue;
+				}
+			}
+			
+			/* No more queued sends to cancel. */
+			break;
+		}
+		
+		return S_OK;
 	}
 	else if(dwFlags & (DPNCANCEL_ENUM | DPNCANCEL_CONNECT | DPNCANCEL_ALL_OPERATIONS))
 	{
@@ -217,7 +284,24 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 		
 		if(dwFlags & DPNCANCEL_ALL_OPERATIONS)
 		{
-			/* TODO: Cancel all sends */
+			for(auto p = peers.begin(); p != peers.end();)
+			{
+				Peer *peer = p->second;
+				
+				SendQueue::SendOp *sqop = peer->sq.remove_queued();
+				
+				if(sqop != NULL)
+				{
+					sqop->invoke_callback(l, DPNERR_USERCANCEL);
+					delete sqop;
+					
+					/* Restart in case peers was munged. */
+					p = peers.begin();
+				}
+				else{
+					++p;
+				}
+			}
 		}
 		
 		return S_OK;
@@ -254,7 +338,39 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 	}
 	else if((hAsyncHandle & AsyncHandleAllocator::TYPE_MASK) == AsyncHandleAllocator::TYPE_SEND)
 	{
-		UNIMPLEMENTED("DirectPlay8Peer::CancelAsyncOperation");
+		/* Search the send queues for a queued send with the handle. */
+		
+		SendQueue::SendOp *sqop = udp_sq.remove_queued_by_handle(hAsyncHandle);
+		if(udp_sq.handle_is_pending(hAsyncHandle))
+		{
+			/* Cannot cancel once message has started sending. */
+			return DPNERR_CANNOTCANCEL;
+		}
+		
+		for(auto p = peers.begin(); p != peers.end() && sqop == NULL; ++p)
+		{
+			Peer *peer = p->second;
+			
+			sqop = peer->sq.remove_queued_by_handle(hAsyncHandle);
+			if(peer->sq.handle_is_pending(hAsyncHandle))
+			{
+				/* Cannot cancel once message has started sending. */
+				return DPNERR_CANNOTCANCEL;
+			}
+		}
+		
+		if(sqop != NULL)
+		{
+			/* Queued send was found, make it go away. */
+			sqop->invoke_callback(l, DPNERR_USERCANCEL);
+			delete sqop;
+			
+			return S_OK;
+		}
+		else{
+			/* No pending send with that handle. */
+			return DPNERR_INVALIDHANDLE;
+		}
 	}
 	else{
 		/* Unrecognised handle type. */
@@ -466,7 +582,7 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 	
 	if(dwFlags & DPNSEND_COMPLETEONPROCESS)
 	{
-		/* Not implemented yet. */
+		/* TODO: Implement DPNSEND_COMPLETEONPROCESS */
 		return DPNERR_GENERIC;
 	}
 	
@@ -599,8 +715,11 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 		unsigned int *pending = new unsigned int(send_to_peers.size() + send_to_self);
 		HRESULT      *result  = new HRESULT(S_OK);
 		
+		DPNHANDLE handle = handle_alloc.new_send();
+		*phAsyncHandle   = handle;
+		
 		auto handle_send_complete =
-			[this, pending, result, pvAsyncContext, dwFlags, prgBufferDesc, cBufferDesc]
+			[this, pending, result, pvAsyncContext, dwFlags, prgBufferDesc, cBufferDesc, handle]
 			(std::unique_lock<std::mutex> &l, HRESULT s_result)
 		{
 			if(s_result != S_OK && *result == S_OK)
@@ -615,7 +734,7 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 				memset(&sc, 0, sizeof(sc));
 				
 				sc.dwSize = sizeof(sc);
-				// sc.hAsyncOp
+				sc.hAsyncOp = handle;
 				sc.pvUserContext = pvAsyncContext;
 				sc.hResultCode   = *result;
 				// sc.dwSendTime
@@ -639,8 +758,6 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 			}
 		};
 		
-		*phAsyncHandle = 0;
-		
 		if(*pending == 0)
 		{
 			/* Horrible horrible hack to raise a DPNMSG_SEND_COMPLETE if there are no
@@ -660,7 +777,7 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 		
 		for(auto pi = send_to_peers.begin(); pi != send_to_peers.end(); ++pi)
 		{
-			(*pi)->sq.send(priority, message, NULL,
+			(*pi)->sq.send(priority, message, NULL, handle,
 				[handle_send_complete]
 				(std::unique_lock<std::mutex> &l, HRESULT s_result)
 				{

@@ -25,7 +25,8 @@ SET CPP_OBJS=^
  tests/DirectPlay8Peer.obj^
  tests/HandleHandlingPool.obj^
  tests/PacketDeserialiser.obj^
- tests/PacketSerialiser.obj
+ tests/PacketSerialiser.obj^
+ tests/SendQueue.obj
 
 REM .obj files to be compiled from .c source files
 SET C_OBJS=^
@@ -54,7 +55,8 @@ SET TEST_OBJS=^
  tests/DirectPlay8Peer.obj^
  tests/HandleHandlingPool.obj^
  tests/PacketDeserialiser.obj^
- tests/PacketSerialiser.obj
+ tests/PacketSerialiser.obj^
+ tests/SendQueue.obj
 
 SET TEST_LIBS=ws2_32.lib dxguid.lib ole32.lib
 

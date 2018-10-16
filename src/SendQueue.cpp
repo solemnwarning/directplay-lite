@@ -4,13 +4,23 @@
 
 #include "SendQueue.hpp"
 
-void SendQueue::send(SendPriority priority, const PacketSerialiser &ps, const struct sockaddr_in *dest_addr, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback)
+void SendQueue::send(SendPriority priority, const PacketSerialiser &ps,
+	const struct sockaddr_in *dest_addr,
+	const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback)
+{
+	send(priority, ps, dest_addr, 0, callback);
+}
+
+void SendQueue::send(SendPriority priority, const PacketSerialiser &ps,
+	const struct sockaddr_in *dest_addr, DPNHANDLE async_handle,
+	const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback)
 {
 	std::pair<const void*, size_t> data = ps.raw_packet();
 	
 	SendOp *op = new SendOp(
 		data.first, data.second,
 		(const struct sockaddr*)(dest_addr), (dest_addr != NULL ? sizeof(*dest_addr) : 0),
+		async_handle,
 		callback);
 	
 	switch(priority)
@@ -63,12 +73,99 @@ void SendQueue::pop_pending(SendQueue::SendOp *op)
 	current = NULL;
 }
 
+/* NOTE: The remove_queued() family of methods will ONLY return SendOps which
+ * have a nonzero async_handle. This is for cancelling application-created SendOps
+ * without also aborting internal ones.
+*/
+
+SendQueue::SendOp *SendQueue::remove_queued()
+{
+	std::list<SendOp*> *queues[] = { &high_queue, &medium_queue, &low_queue };
+	
+	for(int i = 0; i < 3; ++i)
+	{
+		for(auto it = queues[i]->begin(); it != queues[i]->end(); ++it)
+		{
+			SendOp *op = *it;
+			
+			if(op->async_handle != 0)
+			{
+				queues[i]->erase(it);
+				return op;
+			}
+		}
+	}
+	
+	return NULL;
+}
+
+SendQueue::SendOp *SendQueue::remove_queued_by_handle(DPNHANDLE async_handle)
+{
+	std::list<SendOp*> *queues[] = { &low_queue, &medium_queue, &high_queue };
+	
+	for(int i = 0; i < 3; ++i)
+	{
+		for(auto it = queues[i]->begin(); it != queues[i]->end(); ++it)
+		{
+			SendOp *op = *it;
+			
+			if(op->async_handle != 0 && op->async_handle == async_handle)
+			{
+				queues[i]->erase(it);
+				return op;
+			}
+		}
+	}
+	
+	return NULL;
+}
+
+SendQueue::SendOp *SendQueue::remove_queued_by_priority(SendPriority priority)
+{
+	std::list<SendOp*> *queue;
+	
+	switch(priority)
+	{
+		case SEND_PRI_LOW:
+			queue = &low_queue;
+			break;
+			
+		case SEND_PRI_MEDIUM:
+			queue = &medium_queue;
+			break;
+			
+		case SEND_PRI_HIGH:
+			queue = &high_queue;
+			break;
+	}
+	
+	for(auto it = queue->begin(); it != queue->end(); ++it)
+	{
+		SendOp *op = *it;
+		
+		if(op->async_handle != 0)
+		{
+			queue->erase(it);
+			return op;
+		}
+	}
+	
+	return NULL;
+}
+
+bool SendQueue::handle_is_pending(DPNHANDLE async_handle)
+{
+	return (current != NULL && current->async_handle == async_handle);
+}
+
 SendQueue::SendOp::SendOp(const void *data, size_t data_size,
 	const struct sockaddr *dest_addr, size_t dest_addr_size,
+	DPNHANDLE async_handle,
 	const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback):
 	
 	data((const unsigned char*)(data), (const unsigned char*)(data) + data_size),
 	sent_data(0),
+	async_handle(async_handle),
 	callback(callback)
 {
 	assert((size_t)(dest_addr_size) <= sizeof(this->dest_addr));

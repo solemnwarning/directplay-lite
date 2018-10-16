@@ -4747,6 +4747,888 @@ TEST(DirectPlay8Peer, AsyncSendToHostToNone)
 	testing = false;
 }
 
+TEST(DirectPlay8Peer, AsyncSendCancelByHandle)
+{
+	DPNID p1_player_id = -1;
+	
+	DPNHANDLE cancel_handle = 0;
+	bool got_cancel_msg = false;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&cancel_handle, &got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->hAsyncOp,            cancel_handle);
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xBCDE));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					got_cancel_msg = true;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages we don't care about... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			0
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...hopefully stuffing up the send queue enough for us to be able to cancel THIS send
+	 * before it goes out.
+	*/
+	
+	ASSERT_EQ(host->SendTo(
+		p1_player_id,
+		bd,
+		1,
+		0,
+		(void*)(0xBCDE),
+		&cancel_handle,
+		0
+	), DPNSUCCESS_PENDING);
+	
+	ASSERT_EQ(host->CancelAsyncOperation(cancel_handle, 0), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_TRUE(got_cancel_msg);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelPlayerSends)
+{
+	DPNID p1_player_id = -1;
+	
+	DPNHANDLE cancel_handle = 0;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&cancel_handle, &got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xABCD));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			0
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and cancel however many of them are still pending here. */
+	
+	ASSERT_EQ(host->CancelAsyncOperation(p1_player_id, DPNCANCEL_PLAYER_SENDS), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_TRUE(got_cancel_msg > 0);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelPlayerSendsLow)
+{
+	DPNID p1_player_id = -1;
+	
+	DPNHANDLE cancel_handle = 0;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&cancel_handle, &got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->hAsyncOp,            cancel_handle);
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xABCD));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			DPNSEND_PRIORITY_HIGH
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and hopefully cancel this one before it goes out. */
+	
+	ASSERT_EQ(host->SendTo(
+		p1_player_id,
+		bd,
+		1,
+		0,
+		(void*)(0xABCD),
+		&cancel_handle,
+		DPNSEND_PRIORITY_LOW
+	), DPNSUCCESS_PENDING);
+	
+	ASSERT_EQ(host->CancelAsyncOperation(p1_player_id, DPNCANCEL_PLAYER_SENDS_PRIORITY_LOW), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_EQ(got_cancel_msg, 1);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelPlayerSendsNormal)
+{
+	DPNID p1_player_id = -1;
+	
+	DPNHANDLE cancel_handle = 0;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&cancel_handle, &got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->hAsyncOp,            cancel_handle);
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xABCD));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			DPNSEND_PRIORITY_HIGH
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and hopefully cancel this one before it goes out. */
+	
+	ASSERT_EQ(host->SendTo(
+		p1_player_id,
+		bd,
+		1,
+		0,
+		(void*)(0xABCD),
+		&cancel_handle,
+		0
+	), DPNSUCCESS_PENDING);
+	
+	ASSERT_EQ(host->CancelAsyncOperation(p1_player_id, DPNCANCEL_PLAYER_SENDS_PRIORITY_NORMAL), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_EQ(got_cancel_msg, 1);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelPlayerSendsHigh)
+{
+	DPNID p1_player_id = -1;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xABCD));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			DPNSEND_PRIORITY_HIGH
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and cancel however many haven't gone out yet. */
+	
+	ASSERT_EQ(host->CancelAsyncOperation(p1_player_id, DPNCANCEL_PLAYER_SENDS_PRIORITY_HIGH), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_NE(got_cancel_msg, 0);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelPlayerSendsOtherHandle)
+{
+	DPNID host_player_id = -1, p1_player_id = -1;
+	
+	DPNHANDLE cancel_handle = 0;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&host_player_id, &cancel_handle, &got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CREATE_PLAYER)
+			{
+				DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
+				
+				if(host_player_id == -1)
+				{
+					host_player_id = cp->dpnidPlayer;
+				}
+			}
+			else if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			0
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and cancel none of them here. */
+	
+	ASSERT_EQ(host->CancelAsyncOperation(host_player_id, DPNCANCEL_PLAYER_SENDS), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_EQ(got_cancel_msg, 0);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelAllOperations)
+{
+	DPNID p1_player_id = -1;
+	
+	DPNHANDLE cancel_handle = 0;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&cancel_handle, &got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xABCD));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			0
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and cancel however many of them are still pending here. */
+	
+	ASSERT_EQ(host->CancelAsyncOperation(0, DPNCANCEL_ALL_OPERATIONS), S_OK);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_TRUE(got_cancel_msg > 0);
+}
+
+TEST(DirectPlay8Peer, AsyncSendCancelByClose)
+{
+	DPNID p1_player_id = -1;
+	int got_cancel_msg = 0;
+	
+	SessionHost host(APP_GUID_1, L"Session 1", PORT,
+		[&got_cancel_msg]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_SEND_COMPLETE)
+			{
+				DPNMSG_SEND_COMPLETE *sc = (DPNMSG_SEND_COMPLETE*)(pMessage);
+				
+				if(sc->hResultCode == DPNERR_USERCANCEL)
+				{
+					EXPECT_EQ(sc->dwSize,              sizeof(*sc));
+					EXPECT_EQ(sc->pvUserContext,       (void*)(0xABCD));
+					EXPECT_EQ(sc->dwSendCompleteFlags, 0);
+					EXPECT_EQ(sc->pBuffers,            (DPN_BUFFER_DESC*)(NULL));
+					EXPECT_EQ(sc->dwNumBuffers,        0);
+					
+					++got_cancel_msg;
+				}
+				else if(sc->hResultCode != S_OK)
+				{
+					ADD_FAILURE() << "Unexpected hResultCode: " << sc->hResultCode;
+				}
+			}
+			
+			return DPN_OK;
+		});
+	
+	std::function<HRESULT(DWORD,PVOID)> p1_cb =
+		[&p1_player_id]
+		(DWORD dwMessageType, PVOID pMessage)
+		{
+			if(dwMessageType == DPN_MSGID_CONNECT_COMPLETE)
+			{
+				DPNMSG_CONNECT_COMPLETE *cc = (DPNMSG_CONNECT_COMPLETE*)(pMessage);
+				p1_player_id = cc->dpnidLocal;
+			}
+			
+			return DPN_OK;
+		};
+	
+	IDP8PeerInstance p1;
+	
+	ASSERT_EQ(p1->Initialize(&p1_cb, &callback_shim, 0), S_OK);
+	
+	DPN_APPLICATION_DESC connect_to_app;
+	memset(&connect_to_app, 0, sizeof(connect_to_app));
+	
+	connect_to_app.dwSize = sizeof(connect_to_app);
+	connect_to_app.guidApplication = APP_GUID_1;
+	
+	IDP8AddressInstance connect_to_addr(L"127.0.0.1", PORT);
+	
+	ASSERT_EQ(p1->Connect(
+		&connect_to_app,  /* pdnAppDesc */
+		connect_to_addr,  /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		NULL,             /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	/* Give everything a moment to settle. */
+	Sleep(250);
+	
+	DPN_BUFFER_DESC bd[] = {
+		{ 12, (BYTE*)("Hello, world") },
+	};
+	
+	/* Queue a load of messages... */
+	
+	for(int i = 0; i < 1000; ++i)
+	{
+		DPNHANDLE send_handle;
+		ASSERT_EQ(host->SendTo(
+			p1_player_id,
+			bd,
+			1,
+			0,
+			(void*)(0xABCD),
+			&send_handle,
+			0
+		), DPNSUCCESS_PENDING);
+	}
+	
+	/* ...and cancel however many of them are still pending here. */
+	
+	host->Close(DPNCLOSE_IMMEDIATE);
+	
+	/* Wait for the send buffer to clear out. */
+	Sleep(1000);
+	
+	EXPECT_TRUE(got_cancel_msg > 0);
+}
+
 TEST(DirectPlay8Peer, SyncSendToPeerToHost)
 {
 	std::atomic<bool> testing(false);

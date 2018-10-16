@@ -4,6 +4,7 @@
 #include <winsock2.h>
 
 #include <functional>
+#include <dplay8.h>
 #include <list>
 #include <mutex>
 #include <set>
@@ -35,9 +36,12 @@ class SendQueue
 				std::function<void(std::unique_lock<std::mutex>&, HRESULT)> callback;
 				
 			public:
+				const DPNHANDLE async_handle;
+				
 				SendOp(
 					const void *data, size_t data_size,
 					const struct sockaddr *dest_addr, size_t dest_addr_size,
+					DPNHANDLE async_handle,
 					const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
 				
 				std::pair<const void*, size_t> get_data() const;
@@ -65,9 +69,15 @@ class SendQueue
 		SendQueue(const SendQueue &src) = delete;
 		
 		void send(SendPriority priority, const PacketSerialiser &ps, const struct sockaddr_in *dest_addr, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
+		void send(SendPriority priority, const PacketSerialiser &ps, const struct sockaddr_in *dest_addr, DPNHANDLE async_handle, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
 		
 		SendOp *get_pending();
 		void pop_pending(SendOp *op);
+		
+		SendOp *remove_queued();
+		SendOp *remove_queued_by_handle(DPNHANDLE async_handle);
+		SendOp *remove_queued_by_priority(SendPriority priority);
+		bool handle_is_pending(DPNHANDLE async_handle);
 };
 
 #endif /* !DPLITE_SENDQUEUE_HPP */
