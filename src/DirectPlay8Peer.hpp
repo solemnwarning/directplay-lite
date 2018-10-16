@@ -43,7 +43,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		
 		AsyncHandleAllocator handle_alloc;
 		
-		std::map<DPNHANDLE, HostEnumerator> host_enums;
+		std::map<DPNHANDLE, HostEnumerator> async_host_enums;
+		std::list<HostEnumerator> sync_host_enums;
 		std::condition_variable host_enum_completed;
 		
 		GUID instance_guid;

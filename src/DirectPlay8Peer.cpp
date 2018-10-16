@@ -200,7 +200,7 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 		
 		if(dwFlags & (DPNCANCEL_ENUM | DPNCANCEL_ALL_OPERATIONS))
 		{
-			for(auto ei = host_enums.begin(); ei != host_enums.end(); ++ei)
+			for(auto ei = async_host_enums.begin(); ei != async_host_enums.end(); ++ei)
 			{
 				ei->second.cancel();
 			}
@@ -224,8 +224,8 @@ HRESULT DirectPlay8Peer::CancelAsyncOperation(CONST DPNHANDLE hAsyncHandle, CONS
 	}
 	else if((hAsyncHandle & AsyncHandleAllocator::TYPE_MASK) == AsyncHandleAllocator::TYPE_ENUM)
 	{
-		auto ei = host_enums.find(hAsyncHandle);
-		if(ei == host_enums.end())
+		auto ei = async_host_enums.find(hAsyncHandle);
+		if(ei == async_host_enums.end())
 		{
 			return DPNERR_INVALIDHANDLE;
 		}
@@ -1473,8 +1473,8 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 		case STATE_TERMINATED:          break;
 	}
 	
-	/* Signal all EnumHosts() calls to complete. */
-	for(auto ei = host_enums.begin(); ei != host_enums.end(); ++ei)
+	/* Signal all asynchronous EnumHosts() calls to complete. */
+	for(auto ei = async_host_enums.begin(); ei != async_host_enums.end(); ++ei)
 	{
 		ei->second.cancel();
 	}
@@ -1523,7 +1523,7 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 	}
 	
 	/* Wait for outstanding EnumHosts() calls. */
-	host_enum_completed.wait(l, [this]() { return host_enums.empty(); });
+	host_enum_completed.wait(l, [this]() { return async_host_enums.empty() && sync_host_enums.empty(); });
 	
 	/* We need to release the lock while the worker_pool destructor runs so that any worker
 	 * threads waiting for it can finish. No other thread should mess with it while we are in
@@ -1553,11 +1553,9 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 	try {
 		if(dwFlags & DPNENUMHOSTS_SYNC)
 		{
-			/* TODO: Instantiate synchronous instances in host_enums. */
-			
 			HRESULT result;
 			
-			HostEnumerator he(
+			sync_host_enums.emplace_front(
 				global_refcount,
 				message_handler, message_handler_ctx,
 				pApplicationDesc, pAddrHost, pDeviceInfo, pUserEnumData, dwUserEnumDataSize,
@@ -1568,8 +1566,14 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 					result = r;
 				});
 			
+			std::list<HostEnumerator>::iterator he = sync_host_enums.begin();
+			
 			l.unlock();
-			he.wait();
+			he->wait();
+			l.lock();
+			
+			sync_host_enums.erase(he);
+			host_enum_completed.notify_all();
 			
 			return result;
 		}
@@ -1578,7 +1582,7 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 			
 			*pAsyncHandle = handle;
 			
-			host_enums.emplace(
+			async_host_enums.emplace(
 				std::piecewise_construct,
 				std::forward_as_tuple(handle),
 				std::forward_as_tuple(
@@ -1600,7 +1604,7 @@ HRESULT DirectPlay8Peer::EnumHosts(PDPN_APPLICATION_DESC CONST pApplicationDesc,
 						message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
 						
 						std::unique_lock<std::mutex> l(lock);
-						host_enums.erase(handle);
+						async_host_enums.erase(handle);
 						
 						host_enum_completed.notify_all();
 					}));
