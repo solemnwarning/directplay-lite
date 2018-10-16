@@ -23,7 +23,7 @@ static HRESULT __stdcall hook_CoInitialize(LPVOID pvReserved);
 static HRESULT __stdcall hook_CoInitializeEx(LPVOID pvReserved, DWORD dwCoInit);
 static void    __stdcall hook_CoUninitialize();
 
-template<typename CLASS, const CLSID &CLASS_ID, const IID &INTERFACE_ID> void register_class(DWORD *cookie);
+template<typename CLASS, const CLSID &CLASS_ID, const IID &INTERFACE_ID> void register_class(const char *CLASS_NAME, DWORD *cookie);
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvReserved)
 {
@@ -31,7 +31,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvRe
 	{
 		if(MH_Initialize() != MH_OK)
 		{
-			/* TODO: LOG ME */
+			log_printf("Unable to initialise MinHook");
 			return FALSE;
 		}
 		
@@ -42,7 +42,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvRe
 			|| MH_CreateHook(&CoUninitialize, &hook_CoUninitialize, (LPVOID*)(&real_CoUninitialize)) != MH_OK
 			|| MH_EnableHook(&CoUninitialize) != MH_OK)
 		{
-			/* TODO: LOG ME */
+			log_printf("Unable to hook COM initialisation functions");
 			abort();
 		}
 	}
@@ -53,7 +53,7 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpvRe
 			|| MH_RemoveHook(&CoInitialize) != MH_OK
 			|| MH_Uninitialize() != MH_OK)
 		{
-			/* TODO: LOG ME */
+			log_printf("Unable to un-hook COM initialisation functions");
 			abort();
 		}
 		
@@ -81,7 +81,8 @@ extern "C" void* __stdcall find_sym(const char *dll_name, const char *sym_name)
 		dll_handle = LoadLibrary(path);
 		if(dll_handle == NULL)
 		{
-			/* TODO: LOG ME */
+			DWORD err = GetLastError();
+			log_printf("Unable to load %s: %s", path, win_strerror(err).c_str());
 			abort();
 		}
 	}
@@ -89,7 +90,8 @@ extern "C" void* __stdcall find_sym(const char *dll_name, const char *sym_name)
 	void *sym_addr = GetProcAddress(dll_handle, sym_name);
 	if(sym_addr == NULL)
 	{
-		/* TODO: LOG ME */
+		DWORD err = GetLastError();
+		log_printf("Unable to get address of %s in %s: %s", sym_name, dll_name, win_strerror(err).c_str());
 		abort();
 	}
 	
@@ -103,8 +105,8 @@ static HRESULT __stdcall hook_CoInitialize(LPVOID pvReserved)
 	{
 		/* Register COM classes. */
 		
-		register_class<DirectPlay8Address, CLSID_DirectPlay8Address, IID_IDirectPlay8Address>(&DirectPlay8Address_cookie);
-		register_class<DirectPlay8Peer,    CLSID_DirectPlay8Peer,    IID_IDirectPlay8Peer>   (&DirectPlay8Peer_cookie);
+		register_class<DirectPlay8Address, CLSID_DirectPlay8Address, IID_IDirectPlay8Address>("DirectPlay8Address", &DirectPlay8Address_cookie);
+		register_class<DirectPlay8Peer,    CLSID_DirectPlay8Peer,    IID_IDirectPlay8Peer>   ("DirectPlay8Peer",    &DirectPlay8Peer_cookie);
 	}
 	
 	return res;
@@ -117,8 +119,8 @@ static HRESULT __stdcall hook_CoInitializeEx(LPVOID pvReserved, DWORD dwCoInit)
 	{
 		/* Register COM classes. */
 		
-		register_class<DirectPlay8Address, CLSID_DirectPlay8Address, IID_IDirectPlay8Address>(&DirectPlay8Address_cookie);
-		register_class<DirectPlay8Peer,    CLSID_DirectPlay8Peer,    IID_IDirectPlay8Peer>   (&DirectPlay8Peer_cookie);
+		register_class<DirectPlay8Address, CLSID_DirectPlay8Address, IID_IDirectPlay8Address>("DirectPlay8Address", &DirectPlay8Address_cookie);
+		register_class<DirectPlay8Peer,    CLSID_DirectPlay8Peer,    IID_IDirectPlay8Peer>   ("DirectPlay8Peer",    &DirectPlay8Peer_cookie);
 	}
 	
 	return res;
@@ -137,13 +139,14 @@ static void __stdcall hook_CoUninitialize()
 	real_CoUninitialize();
 }
 
-template<typename CLASS, const CLSID &CLASS_ID, const IID &INTERFACE_ID> void register_class(DWORD *cookie)
+template<typename CLASS, const CLSID &CLASS_ID, const IID &INTERFACE_ID> void register_class(const char *CLASS_NAME, DWORD *cookie)
 {
 	IClassFactory *factory = new Factory<CLASS, INTERFACE_ID>(NULL);
 	
-	if(CoRegisterClassObject(CLASS_ID, factory, CLSCTX_INPROC_SERVER, REGCLS_MULTIPLEUSE, cookie) != 0)
+	HRESULT result = CoRegisterClassObject(CLASS_ID, factory, CLSCTX_INPROC_SERVER, REGCLS_MULTIPLEUSE, cookie);
+	if(result != S_OK)
 	{
-		/* TODO: LOG ME */
+		log_printf("Unable to register COM class object for %s (result = %08x)", CLASS_NAME, (unsigned)(result));
 		abort();
 	}
 	
