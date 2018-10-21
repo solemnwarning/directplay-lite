@@ -14,6 +14,7 @@ SET CPP_OBJS=^
  src/COMAPIException.obj^
  src/DirectPlay8Address.obj^
  src/DirectPlay8Peer.obj^
+ src/dpnet.obj^
  src/EventObject.obj^
  src/HandleHandlingPool.obj^
  src/HostEnumerator.obj^
@@ -83,6 +84,22 @@ SET HOOK_OBJS=^
 
 SET HOOK_LIBS=ws2_32.lib dxguid.lib ole32.lib iphlpapi.lib
 
+SET DPNET_OBJS=^
+ src/AsyncHandleAllocator.obj^
+ src/COMAPIException.obj^
+ src/DirectPlay8Address.obj^
+ src/DirectPlay8Peer.obj^
+ src/dpnet.obj^
+ src/EventObject.obj^
+ src/HandleHandlingPool.obj^
+ src/HostEnumerator.obj^
+ src/Log.obj^
+ src/network.obj^
+ src/packet.obj^
+ src/SendQueue.obj
+
+SET DPNET_LIBS=ws2_32.lib dxguid.lib ole32.lib iphlpapi.lib
+
 SET CFLAGS=^
  /Zi^
  /EHsc^
@@ -138,3 +155,5 @@ FOR %%o IN (%HOOK_DLLS%) DO (
 	        link /dll /out:hookdll/%%o.dll /def:hookdll/%%o.def hookdll/%%o.obj %HOOK_OBJS% %HOOK_LIBS% || exit /b
 	echo:
 )
+
+link /dll /out:dpnet.dll /def:src/dpnet.def %DPNET_OBJS% %DPNET_LIBS% || exit /b
