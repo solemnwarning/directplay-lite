@@ -877,7 +877,7 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 	
 	application_guid = pdnAppDesc->guidApplication;
 	max_players      = pdnAppDesc->dwMaxPlayers;
-	session_name     = pdnAppDesc->pwszSessionName;
+	session_name     = (pdnAppDesc->pwszSessionName != NULL ? pdnAppDesc->pwszSessionName : L"(null)");
 	
 	if(pdnAppDesc->dwFlags & DPNSESSION_REQUIREPASSWORD)
 	{
