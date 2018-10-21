@@ -1,10 +1,13 @@
 #include <winsock2.h>
+#include <iphlpapi.h>
 #include <windows.h>
 #include <ws2tcpip.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <vector>
 
 #include "network.hpp"
+#include "log.hpp"
 
 int create_udp_socket(uint32_t ipaddr, uint16_t port)
 {
@@ -172,4 +175,67 @@ int create_discovery_socket()
 	}
 	
 	return sock;
+}
+
+std::list<SystemNetworkInterface> get_network_interfaces()
+{
+	std::vector<unsigned char> buf;
+	
+	while(1)
+	{
+		ULONG size = buf.size();
+		ULONG err = GetAdaptersAddresses(AF_UNSPEC, 0, NULL, (IP_ADAPTER_ADDRESSES*)(buf.data()), &size);
+		
+		if(err == ERROR_SUCCESS)
+		{
+			break;
+		}
+		else if(err == ERROR_NO_DATA)
+		{
+			return std::list<SystemNetworkInterface>();
+		}
+		else if(err == ERROR_BUFFER_OVERFLOW)
+		{
+			buf.resize(size);
+		}
+		else{
+			log_printf("GetAdaptersAddresses: %s", win_strerror(err).c_str());
+			return std::list<SystemNetworkInterface>();
+		}
+	}
+	
+	std::list<SystemNetworkInterface> interfaces;
+	
+	for(IP_ADAPTER_ADDRESSES *ipaa = (IP_ADAPTER_ADDRESSES*)(buf.data()); ipaa != NULL; ipaa = ipaa->Next)
+	{
+		if(ipaa->IfType == IF_TYPE_SOFTWARE_LOOPBACK)
+		{
+			continue;
+		}
+		
+		SystemNetworkInterface iface;
+		
+		iface.friendly_name = ipaa->FriendlyName;
+		
+		for(IP_ADAPTER_UNICAST_ADDRESS_LH *uc = ipaa->FirstUnicastAddress; uc != NULL; uc = uc->Next)
+		{
+			if(uc->Address.iSockaddrLength > sizeof(struct sockaddr_storage))
+			{
+				log_printf("Ignoring oversize address (family = %u, size = %u)",
+					(unsigned)(uc->Address.lpSockaddr->sa_family),
+					(unsigned)(uc->Address.iSockaddrLength));
+				continue;
+			}
+			
+			struct sockaddr_storage ss;
+			memset(&ss, 0, sizeof(ss));
+			memcpy(&ss, uc->Address.lpSockaddr, uc->Address.iSockaddrLength);
+			
+			iface.unicast_addrs.push_back(ss);
+		}
+		
+		interfaces.push_back(iface);
+	}
+	
+	return interfaces;
 }

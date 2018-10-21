@@ -58,7 +58,7 @@ SET TEST_OBJS=^
  tests/PacketSerialiser.obj^
  tests/SendQueue.obj
 
-SET TEST_LIBS=ws2_32.lib dxguid.lib ole32.lib
+SET TEST_LIBS=ws2_32.lib dxguid.lib ole32.lib iphlpapi.lib
 
 SET HOOK_DLLS=ddraw
 
@@ -81,7 +81,7 @@ SET HOOK_OBJS=^
  src/packet.obj^
  src/SendQueue.obj
 
-SET HOOK_LIBS=ws2_32.lib dxguid.lib ole32.lib
+SET HOOK_LIBS=ws2_32.lib dxguid.lib ole32.lib iphlpapi.lib
 
 SET CFLAGS=^
  /Zi^

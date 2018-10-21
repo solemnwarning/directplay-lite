@@ -1567,7 +1567,64 @@ HRESULT DirectPlay8Peer::GetPeerAddress(CONST DPNID dpnid, IDirectPlay8Address**
 
 HRESULT DirectPlay8Peer::GetLocalHostAddresses(IDirectPlay8Address** CONST prgpAddress, DWORD* CONST pcAddress, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::GetLocalHostAddresses");
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
+	{
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOCONNECTION;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_NOCONNECTION;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_NOCONNECTION;
+		case STATE_CONNECT_FAILED:      return DPNERR_NOCONNECTION;
+		case STATE_CONNECTED:           return DPNERR_NOTHOST;
+		case STATE_CLOSING:             return DPNERR_NOCONNECTION;
+		case STATE_TERMINATED:          return DPNERR_NOCONNECTION;
+	}
+	
+	if(dwFlags & DPNGETLOCALHOSTADDRESSES_COMBINED)
+	{
+		/* TODO: Implement DPNGETLOCALHOSTADDRESSES_COMBINED */
+		return E_NOTIMPL;
+	}
+	
+	/* We don't support binding to specific interfaces yet, so we just return all the IPv4
+	 * addresses assigned to the system.
+	*/
+	
+	std::list<SystemNetworkInterface> interfaces = get_network_interfaces();
+	std::list<struct sockaddr_in> local_addrs;
+	
+	for(auto i = interfaces.begin(); i != interfaces.end(); ++i)
+	{
+		for(auto a = i->unicast_addrs.begin(); a != i->unicast_addrs.end(); ++a)
+		{
+			if(a->ss_family == AF_INET)
+			{
+				struct sockaddr_in sa_v4 = *(struct sockaddr_in*)(&(*a));
+				sa_v4.sin_port = htons(local_port);
+				
+				local_addrs.push_back(sa_v4);
+			}
+		}
+	}
+	
+	if(*pcAddress < local_addrs.size())
+	{
+		*pcAddress = local_addrs.size();
+		return DPNERR_BUFFERTOOSMALL;
+	}
+	
+	IDirectPlay8Address **dest = prgpAddress;
+	for(auto a = local_addrs.begin(); a != local_addrs.end(); ++a)
+	{
+		*dest = DirectPlay8Address::create_host_address(global_refcount, service_provider, (struct sockaddr*)(&(*a)));
+		++dest;
+	}
+	
+	*pcAddress = local_addrs.size();
+	
+	return S_OK;
 }
 
 HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
