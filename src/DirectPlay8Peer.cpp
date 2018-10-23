@@ -2514,32 +2514,39 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 	
 	while((peer = get_peer_by_peer_id(peer_id)) != NULL)
 	{
-		if(!rb_claimed)
+		if(!rb_claimed && peer->recv_busy)
 		{
-			if(peer->recv_busy)
-			{
-				/* Another thread is already processing data from this socket.
-				 *
-				 * Only one thread at a time is allowed to handle reads, even when the
-				 * other thread is in the application callback, so that the order of
-				 * messages is preserved.
-				*/
-				return;
-			}
-			else{
-				/* No other thread is processing data from this peer, we shall
-				 * claim the throne and temporarily disable FD_READ events from it
-				 * to avoid other workers spinning against the recv_busy lock.
-				*/
-				
-				peer->recv_busy = true;
-				rb_claimed      = true;
-				
-				peer->disable_events(FD_READ | FD_CLOSE);
-			}
+			/* Another thread is already processing data from this socket.
+			 *
+			 * Only one thread at a time is allowed to handle reads, even when the
+			 * other thread is in the application callback, so that the order of
+			 * messages is preserved.
+			*/
+			return;
 		}
 		
 		int r = recv(peer->sock, (char*)(peer->recv_buf) + peer->recv_buf_cur, sizeof(peer->recv_buf) - peer->recv_buf_cur, 0);
+		DWORD err = WSAGetLastError();
+		
+		if(r < 0 && err == WSAEWOULDBLOCK)
+		{
+			/* Nothing to read. */
+			break;
+		}
+		
+		if(!rb_claimed)
+		{
+			/* No other thread is processing data from this peer, we shall
+			 * claim the throne and temporarily disable FD_READ events from it
+			 * to avoid other workers spinning against the recv_busy lock.
+			*/
+			
+			peer->recv_busy = true;
+			rb_claimed      = true;
+			
+			peer->disable_events(FD_READ | FD_CLOSE);
+		}
+		
 		if(r == 0)
 		{
 			/* When the remote end initiates a graceful close, it will no longer
@@ -2551,22 +2558,13 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 		}
 		else if(r < 0)
 		{
-			DWORD err = WSAGetLastError();
+			/* Read error. */
 			
-			if(err == WSAEWOULDBLOCK)
-			{
-				/* Nothing to read */
-				break;
-			}
-			else{
-				/* Read error. */
-				
-				log_printf("Read error on peer %u: %s", peer_id, win_strerror(err).c_str());
-				log_printf("Closing connection");
-				
-				peer_destroy(l, peer_id, DPNERR_CONNECTIONLOST, DPNDESTROYPLAYERREASON_CONNECTIONLOST);
-				return;
-			}
+			log_printf("Read error on peer %u: %s", peer_id, win_strerror(err).c_str());
+			log_printf("Closing connection");
+			
+			peer_destroy(l, peer_id, DPNERR_CONNECTIONLOST, DPNDESTROYPLAYERREASON_CONNECTIONLOST);
+			return;
 		}
 		
 		if(peer->state == Peer::PS_CLOSING)
@@ -2715,7 +2713,7 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 		}
 	}
 	
-	if(peer != NULL)
+	if(peer != NULL && rb_claimed)
 	{
 		peer->enable_events(FD_READ | FD_CLOSE);
 		peer->recv_busy = false;
