@@ -9,7 +9,7 @@
 #define DISCOVERY_PORT    6073
 #define DEFAULT_HOST_PORT 6072
 #define LISTEN_QUEUE_SIZE 16
-#define MAX_PACKET_SIZE   (60 * 1024)
+#define MAX_PACKET_SIZE   (256 * 1024)
 
 struct SystemNetworkInterface {
 	std::wstring friendly_name;
