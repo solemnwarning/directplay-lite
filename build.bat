@@ -61,7 +61,7 @@ SET TEST_OBJS=^
 
 SET TEST_LIBS=ws2_32.lib dxguid.lib ole32.lib iphlpapi.lib
 
-SET HOOK_DLLS=ddraw
+SET HOOK_DLLS=ddraw dsound
 
 SET HOOK_OBJS=^
  hookdll/hookdll.obj^
