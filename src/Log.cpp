@@ -22,7 +22,7 @@ static void _log_init()
 	const char *log_name = getenv("DPLITE_LOG");
 	if(log_name != NULL)
 	{
-		log_fh = fopen("a", log_name);
+		log_fh = fopen(log_name, "a");
 	}
 	
 	const char *t = getenv("DPLITE_TRACE");
