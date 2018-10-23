@@ -1022,17 +1022,7 @@ HRESULT DirectPlay8Peer::Host(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, IDir
 	state = STATE_HOSTING;
 	
 	/* Send DPNMSG_CREATE_PLAYER for local player. */
-	
-	DPNMSG_CREATE_PLAYER cp;
-	memset(&cp, 0, sizeof(cp));
-	
-	cp.dwSize          = sizeof(cp);
-	cp.dpnidPlayer     = local_player_id;
-	cp.pvPlayerContext = local_player_ctx;
-	
-	message_handler(message_handler_ctx, DPN_MSGID_CREATE_PLAYER, &cp);
-	
-	local_player_ctx = cp.pvPlayerContext;
+	dispatch_create_player(l, local_player_id, &local_player_ctx);
 	
 	return S_OK;
 }
