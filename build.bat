@@ -27,7 +27,8 @@ SET CPP_OBJS=^
  tests/HandleHandlingPool.obj^
  tests/PacketDeserialiser.obj^
  tests/PacketSerialiser.obj^
- tests/SendQueue.obj
+ tests/SendQueue.obj^
+ tests/soak-peer-server.obj
 
 REM .obj files to be compiled from .c source files
 SET C_OBJS=^
@@ -140,6 +141,12 @@ echo ==
 echo == link /debug /out:tests/all-tests.exe %TEST_OBJS% %TEST_LIBS%
 echo ==
         link /debug /out:tests/all-tests.exe %TEST_OBJS% %TEST_LIBS% || exit /b
+echo:
+
+echo ==
+echo == link /debug /out:tests/soak-peer-server.exe tests/soak-peer-server.obj dxguid.lib ole32.lib
+echo ==
+        link /debug /out:tests/soak-peer-server.exe tests/soak-peer-server.obj dxguid.lib ole32.lib || exit /b
 echo:
 
 FOR %%o IN (%HOOK_DLLS%) DO (
