@@ -22,6 +22,7 @@ static int64_t now_ms();
 static int64_t start_time;
 static int64_t usage_time;
 static IDirectPlay8Peer *instance;
+static bool disconnected;
 
 static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID pMessage);
 static void print_usage();
@@ -77,6 +78,8 @@ int main(int argc, char **argv)
 		{
 			timed_printf("Initialising DirectPlay8Peer instance...");
 			
+			disconnected = false;
+			
 			int64_t initialise_time = now_ms();
 			int64_t close_time = now_ms() + reinitialise_interval;
 			reinitialise_interval *= 2;
@@ -90,43 +93,76 @@ int main(int argc, char **argv)
 			
 			print_usage();
 			
-			DPN_APPLICATION_DESC app_desc;
-			memset(&app_desc, 0, sizeof(app_desc));
+			bool connected = false;
 			
-			app_desc.dwSize = sizeof(app_desc);
-			app_desc.guidApplication = APP_GUID;
-			app_desc.pwszSessionName = (wchar_t*)(L"IDirectPlay8Peer soak test");
-			
-			IDirectPlay8Address *address;
-			res = CoCreateInstance(CLSID_DirectPlay8Address, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Address, (void**)(&address));
-			if(res != S_OK)
+			while(!disconnected && now_ms() < close_time && now_ms() < destruct_time && now_ms() < end_time)
 			{
-				fprintf(stderr, "Failed to construct DirectPlay8Address instance (HRESULT %08x)\n", (unsigned)(res));
-				return 1;
-			}
-			
-			res = address->SetSP(&CLSID_DP8SP_TCPIP);
-			if(res != S_OK)
-			{
-				fprintf(stderr, "IDirectPlay8Address::SetSP failed with HRESULT %08x\n", (unsigned)(res));
-				return 1;
-			}
-			
-			IDirectPlay8Address *addresses[] = { address };
-			
-			res = instance->Host(&app_desc, addresses, 1, NULL, NULL, NULL, 0);
-			if(res != S_OK)
-			{
-				fprintf(stderr, "IDirectPlay8Peer::Host failed with HRESULT %08x\n", (unsigned)(res));
-				return 1;
-			}
-			
-			address->Release();
-			
-			print_usage();
-			
-			while(now_ms() < close_time && now_ms() < destruct_time && now_ms() < end_time)
-			{
+				if(!connected)
+				{
+					timed_printf("Enumerating sessions...");
+					
+					DPN_APPLICATION_DESC app_desc;
+					memset(&app_desc, 0, sizeof(app_desc));
+					
+					app_desc.dwSize = sizeof(app_desc);
+					app_desc.guidApplication = APP_GUID;
+					
+					IDirectPlay8Address *enum_address;
+					res = CoCreateInstance(CLSID_DirectPlay8Address, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Address, (void**)(&enum_address));
+					if(res != S_OK)
+					{
+						fprintf(stderr, "Failed to construct DirectPlay8Address instance (HRESULT %08x)\n", (unsigned)(res));
+						return 1;
+					}
+					
+					res = enum_address->SetSP(&CLSID_DP8SP_TCPIP);
+					if(res != S_OK)
+					{
+						fprintf(stderr, "IDirectPlay8Address::SetSP failed with HRESULT %08x\n", (unsigned)(res));
+						return 1;
+					}
+					
+					IDirectPlay8Address *connect_address = NULL;
+					
+					res = instance->EnumHosts(&app_desc, NULL, enum_address, NULL, 0, 0, 0, 0, &connect_address, NULL, DPNENUMHOSTS_SYNC);
+					if(res != S_OK)
+					{
+						fprintf(stderr, "IDirectPlay8Peer::EnumHosts failed with HRESULT %08x\n", (unsigned)(res));
+						return 1;
+					}
+					
+					enum_address->Release();
+					
+					if(connect_address == NULL)
+					{
+						continue;
+					}
+					
+					timed_printf("Connecting to session...");
+					
+					res = instance->Connect(
+						&app_desc,         /* pdnAppDesc */
+						connect_address,   /* pHostAddr */
+						NULL,              /* pDeviceInfo */
+						NULL,              /* pdnSecurity */
+						NULL,              /* pdnCredentials */
+						NULL,              /* pvUserConnectData */
+						0,                 /* dwUserConnectDataSize */
+						NULL,              /* pvPlayerContext */
+						NULL,              /* pvAsyncContext */
+						NULL,              /* phAsyncHandle */
+						DPNCONNECT_SYNC);  /* dwFlags */
+					if(res != S_OK)
+					{
+						fprintf(stderr, "IDirectPlay8Peer::Connect failed with HRESULT %08x\n", (unsigned)(res));
+						return 1;
+					}
+					
+					connected = true;
+					
+					connect_address->Release();
+				}
+				
 				int64_t sleep_until = std::min({ usage_time, close_time, destruct_time, end_time });
 				int64_t sleep_for   = sleep_until - now_ms();
 				
@@ -183,6 +219,25 @@ static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID
 {
 	switch(dwMessageType)
 	{
+		case DPN_MSGID_ENUM_HOSTS_RESPONSE:
+		{
+			DPNMSG_ENUM_HOSTS_RESPONSE *ehr = (DPNMSG_ENUM_HOSTS_RESPONSE*)(pMessage);
+			IDirectPlay8Address **connect_address = (IDirectPlay8Address**)(ehr->pvUserContext);
+			
+			ehr->pAddressSender->AddRef();
+			*connect_address = ehr->pAddressSender;
+			
+			break;
+		}
+		
+		case DPN_MSGID_TERMINATE_SESSION:
+		{
+			timed_printf("Lost connection to session");
+			disconnected = true;
+			
+			break;
+		}
+		
 		case DPN_MSGID_CREATE_PLAYER:
 		{
 			DPNMSG_CREATE_PLAYER *cp = (DPNMSG_CREATE_PLAYER*)(pMessage);
