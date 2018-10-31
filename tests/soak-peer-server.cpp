@@ -11,8 +11,8 @@
 #include <windows.h>
 
 /* Durations specified in milliseconds. */
-#define TEST_DURATION         (60 * 60 * 1000)
-#define MEMORY_STATS_INTERVAL (60 * 1000)
+#define TEST_DURATION         (8 * 60 * 60 * 1000)
+#define MEMORY_STATS_INTERVAL (30 * 1000)
 
 static const GUID APP_GUID = { 0x8723c2c6, 0x0b89, 0x4ea0, { 0xad, 0xe8, 0xec, 0x53, 0x66, 0x51, 0x68, 0x9f } };
 
@@ -195,6 +195,22 @@ static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID
 		{
 			DPNMSG_DESTROY_PLAYER *dp = (DPNMSG_DESTROY_PLAYER*)(pMessage);
 			timed_printf("Destroyed player ID: %u", (unsigned)(dp->dpnidPlayer));
+			
+			break;
+		}
+		
+		case DPN_MSGID_RECEIVE:
+		{
+			DPNMSG_RECEIVE *r = (DPNMSG_RECEIVE*)(pMessage);
+			
+			DPN_BUFFER_DESC bd = { r->dwReceiveDataSize, r->pReceiveData };
+			
+			DPNHANDLE s_handle;
+			HRESULT res = instance->SendTo(r->dpnidSender, &bd, 1, 0, NULL, &s_handle, 0);
+			if(res != DPNSUCCESS_PENDING)
+			{
+				fprintf(stderr, "IDirectPlay8Peer::SendTo() failed with HRESULT %08x\n", (unsigned int)(res));
+			}
 			
 			break;
 		}
