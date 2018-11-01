@@ -15,12 +15,39 @@
 #include <windows.h>
 
 /* Durations specified in milliseconds. */
-#define TEST_DURATION  (8 * 60 * 60 * 1000)
 #define STATS_INTERVAL (30 * 1000)
 
 static const int MESSAGE_SIZES[] = { 17, 33, 257, 1025, 4097, 8193, 16385, 70000 };
 
 static const GUID APP_GUID = { 0x8723c2c6, 0x0b89, 0x4ea0, { 0xad, 0xe8, 0xec, 0x53, 0x66, 0x51, 0x68, 0x9f } };
+
+struct phase {
+	int phase_duration_ms;
+	int reconstruct_interval_ms;
+	int reinitialise_interval_ms;
+	int concurrent_messages;
+};
+
+static const struct phase PHASES[] = {
+	/* Generate statistics with varying numbers of concurrent SendTo() operations. */
+	{ 300000, 999999999, 999999999, 1 },
+	{ 300000, 999999999, 999999999, 2 },
+	{ 300000, 999999999, 999999999, 4 },
+	{ 300000, 999999999, 999999999, 8 },
+	{ 300000, 999999999, 999999999, 16 },
+	{ 300000, 999999999, 999999999, 32 },
+	{ 300000, 999999999, 999999999, 64 },
+	{ 300000, 999999999, 999999999, 128 },
+	
+	/* Long running IDirectPlay8Peer instance and session. */
+	{ 3600000, 999999999, 999999999, 2 },
+	
+	/* Long running IDirectPlay8Peer instance, frequent session reconnects. */
+	{ 3600000, 999999999, 60000, 2 },
+	
+	/* Frequently recreated IDirectPlay8Peer instance. */
+	{ 3600000, 60000, 999999999, 2 },
+};
 
 struct message_header {
 	int64_t timestamp_us;
@@ -35,7 +62,7 @@ static int64_t start_time;
 static int64_t usage_time;
 static IDirectPlay8Peer *instance;
 static bool disconnected;
-static int inflight_messages;
+static const struct phase *phase;
 
 static std::atomic<uint64_t> msg_num_complete;
 static std::atomic<uint64_t> msg_total_send_us;
@@ -64,163 +91,154 @@ int main(int argc, char **argv)
 		return 1;
 	}
 	
-	/* Interval between destroying and re-creating the DirectPlay8Peer
-	 * object and closing and re-initialising it.
-	 *
-	 * Each of these will increase as the test runs.
-	*/
-	
-	int64_t reconstruct_interval  = (120 * 1000);
-	int64_t reinitialise_interval = (30  * 1000);
-	inflight_messages = 1;
-	
 	start_time = now_ms();
-	int64_t end_time = start_time + TEST_DURATION;
-	
 	msg_num_complete = 0;
 	
-	while(now_ms() < end_time)
+	for(int i = 0; i < (sizeof(PHASES) / sizeof(*PHASES)); ++i)
 	{
-		timed_printf("Constructing DirectPlay8Peer instance...");
+		phase = &(PHASES[i]);
 		
-		res = CoCreateInstance(CLSID_DirectPlay8Peer, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Peer, (void**)(&instance));
-		if(res != S_OK)
+		int64_t phase_end_ms = now_ms() + phase->phase_duration_ms;
+		
+		while(now_ms() < phase_end_ms)
 		{
-			timed_fprintf(stderr, "Failed to construct DirectPlay8Peer instance (HRESULT %08x)", (unsigned)(res));
-			return 1;
-		}
-		
-		int64_t construct_time = now_ms();
-		int64_t destruct_time  = construct_time + reconstruct_interval;
-		reconstruct_interval *= 2;
-		
-		while(now_ms() < destruct_time && now_ms() < end_time)
-		{
-			timed_printf("Initialising DirectPlay8Peer instance...");
+			timed_printf("Constructing DirectPlay8Peer instance...");
 			
-			disconnected = false;
-			msg_num_complete = 0;
-			msg_total_send_us = 0;
-			msg_total_rtt_us = 0;
-			msg_total_recv_bytes = 0;
-			
-			int64_t initialise_time = now_ms();
-			int64_t close_time = now_ms() + reinitialise_interval;
-			reinitialise_interval *= 2;
-			
-			res = instance->Initialize(NULL, &callback, 0);
+			res = CoCreateInstance(CLSID_DirectPlay8Peer, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Peer, (void**)(&instance));
 			if(res != S_OK)
 			{
-				timed_fprintf(stderr, "IDirectPlay8Peer::Initialize failed with HRESULT %08x", (unsigned)(res));
+				timed_fprintf(stderr, "Failed to construct DirectPlay8Peer instance (HRESULT %08x)", (unsigned)(res));
 				return 1;
 			}
 			
-			bool connected = false;
+			int64_t construct_time = now_ms();
+			int64_t destruct_time  = construct_time + phase->reconstruct_interval_ms;
 			
-			while(!disconnected && now_ms() < close_time && now_ms() < destruct_time && now_ms() < end_time)
+			while(now_ms() < destruct_time && now_ms() < phase_end_ms)
 			{
-				if(!connected)
+				timed_printf("Initialising DirectPlay8Peer instance...");
+				
+				disconnected = false;
+				msg_num_complete = 0;
+				msg_total_send_us = 0;
+				msg_total_rtt_us = 0;
+				msg_total_recv_bytes = 0;
+				
+				int64_t initialise_time = now_ms();
+				int64_t close_time = now_ms() + phase->reinitialise_interval_ms;
+				
+				res = instance->Initialize(NULL, &callback, 0);
+				if(res != S_OK)
 				{
-					timed_printf("Enumerating sessions...");
-					
-					DPN_APPLICATION_DESC app_desc;
-					memset(&app_desc, 0, sizeof(app_desc));
-					
-					app_desc.dwSize = sizeof(app_desc);
-					app_desc.guidApplication = APP_GUID;
-					
-					IDirectPlay8Address *enum_address;
-					res = CoCreateInstance(CLSID_DirectPlay8Address, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Address, (void**)(&enum_address));
-					if(res != S_OK)
-					{
-						timed_fprintf(stderr, "Failed to construct DirectPlay8Address instance (HRESULT %08x)", (unsigned)(res));
-						return 1;
-					}
-					
-					res = enum_address->SetSP(&CLSID_DP8SP_TCPIP);
-					if(res != S_OK)
-					{
-						timed_fprintf(stderr, "IDirectPlay8Address::SetSP failed with HRESULT %08x", (unsigned)(res));
-						return 1;
-					}
-					
-					IDirectPlay8Address *connect_address = NULL;
-					
-					res = instance->EnumHosts(&app_desc, NULL, enum_address, NULL, 0, 0, 0, 0, &connect_address, NULL, DPNENUMHOSTS_SYNC);
-					if(res != S_OK)
-					{
-						timed_fprintf(stderr, "IDirectPlay8Peer::EnumHosts failed with HRESULT %08x", (unsigned)(res));
-						return 1;
-					}
-					
-					enum_address->Release();
-					
-					if(connect_address == NULL)
-					{
-						continue;
-					}
-					
-					timed_printf("Connecting to session...");
-					
-					res = instance->Connect(
-						&app_desc,         /* pdnAppDesc */
-						connect_address,   /* pHostAddr */
-						NULL,              /* pDeviceInfo */
-						NULL,              /* pdnSecurity */
-						NULL,              /* pdnCredentials */
-						NULL,              /* pvUserConnectData */
-						0,                 /* dwUserConnectDataSize */
-						(void*)(0xAAAA),   /* pvPlayerContext */
-						NULL,              /* pvAsyncContext */
-						NULL,              /* phAsyncHandle */
-						DPNCONNECT_SYNC);  /* dwFlags */
-					if(res != S_OK)
-					{
-						timed_fprintf(stderr, "IDirectPlay8Peer::Connect failed with HRESULT %08x", (unsigned)(res));
-						continue;
-					}
-					
-					connected = true;
-					msg_stats_start = now_ms();
-					
-					connect_address->Release();
+					timed_fprintf(stderr, "IDirectPlay8Peer::Initialize failed with HRESULT %08x", (unsigned)(res));
+					return 1;
 				}
 				
-				int64_t sleep_until = std::min({ usage_time, close_time, destruct_time, end_time });
-				int64_t sleep_for   = sleep_until - now_ms();
+				bool connected = false;
 				
-				if(sleep_for > 0)
+				while(!disconnected && now_ms() < close_time && now_ms() < destruct_time && now_ms() < phase_end_ms)
 				{
-					Sleep(sleep_for);
+					if(!connected)
+					{
+						timed_printf("Enumerating sessions...");
+						
+						DPN_APPLICATION_DESC app_desc;
+						memset(&app_desc, 0, sizeof(app_desc));
+						
+						app_desc.dwSize = sizeof(app_desc);
+						app_desc.guidApplication = APP_GUID;
+						
+						IDirectPlay8Address *enum_address;
+						res = CoCreateInstance(CLSID_DirectPlay8Address, NULL, CLSCTX_INPROC_SERVER, IID_IDirectPlay8Address, (void**)(&enum_address));
+						if(res != S_OK)
+						{
+							timed_fprintf(stderr, "Failed to construct DirectPlay8Address instance (HRESULT %08x)", (unsigned)(res));
+							return 1;
+						}
+						
+						res = enum_address->SetSP(&CLSID_DP8SP_TCPIP);
+						if(res != S_OK)
+						{
+							timed_fprintf(stderr, "IDirectPlay8Address::SetSP failed with HRESULT %08x", (unsigned)(res));
+							return 1;
+						}
+						
+						IDirectPlay8Address *connect_address = NULL;
+						
+						res = instance->EnumHosts(&app_desc, NULL, enum_address, NULL, 0, 0, 0, 0, &connect_address, NULL, DPNENUMHOSTS_SYNC);
+						if(res != S_OK)
+						{
+							timed_fprintf(stderr, "IDirectPlay8Peer::EnumHosts failed with HRESULT %08x", (unsigned)(res));
+							return 1;
+						}
+						
+						enum_address->Release();
+						
+						if(connect_address == NULL)
+						{
+							continue;
+						}
+						
+						timed_printf("Connecting to session...");
+						
+						res = instance->Connect(
+							&app_desc,         /* pdnAppDesc */
+							connect_address,   /* pHostAddr */
+							NULL,              /* pDeviceInfo */
+							NULL,              /* pdnSecurity */
+							NULL,              /* pdnCredentials */
+							NULL,              /* pvUserConnectData */
+							0,                 /* dwUserConnectDataSize */
+							(void*)(0xAAAA),   /* pvPlayerContext */
+							NULL,              /* pvAsyncContext */
+							NULL,              /* phAsyncHandle */
+							DPNCONNECT_SYNC);  /* dwFlags */
+						if(res != S_OK)
+						{
+							timed_fprintf(stderr, "IDirectPlay8Peer::Connect failed with HRESULT %08x", (unsigned)(res));
+							continue;
+						}
+						
+						connected = true;
+						msg_stats_start = now_ms();
+						
+						connect_address->Release();
+					}
+					
+					int64_t sleep_until = std::min({ usage_time, close_time, destruct_time, phase_end_ms });
+					int64_t sleep_for   = sleep_until - now_ms();
+					
+					if(sleep_for > 0)
+					{
+						Sleep(sleep_for);
+					}
+					
+					if(now_ms() >= usage_time)
+					{
+						print_stats();
+					}
 				}
 				
-				if(now_ms() >= usage_time)
+				timed_printf("Closing DirectPlay8Peer instance...");
+				
+				/* Alternate between hard/soft closes. */
+				
+				static bool hard_close = false;
+				res = instance->Close(hard_close ? DPNCLOSE_IMMEDIATE : 0);
+				if(res != S_OK)
 				{
-					print_stats();
+					timed_fprintf(stderr, "IDirectPlay8Peer::Close() failed with HRESULT %08x", (unsigned int)(res));
+					return 1;
 				}
+				
+				hard_close = !hard_close;
 			}
 			
-			timed_printf("Closing DirectPlay8Peer instance...");
+			timed_printf("Destroying DirectPlay8Peer instance...");
 			
-			/* Alternate between hard/soft closes. */
-			
-			static bool hard_close = false;
-			res = instance->Close(hard_close ? DPNCLOSE_IMMEDIATE : 0);
-			if(res != S_OK)
-			{
-				timed_fprintf(stderr, "IDirectPlay8Peer::Close() failed with HRESULT %08x", (unsigned int)(res));
-				return 1;
-			}
-			
-			hard_close = !hard_close;
+			instance->Release();
+			instance = NULL;
 		}
-		
-		timed_printf("Destroying DirectPlay8Peer instance...");
-		
-		instance->Release();
-		instance = NULL;
-		
-		inflight_messages *= 2;
 	}
 	
 	CoUninitialize();
@@ -283,7 +301,7 @@ static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID
 			
 			timed_printf("New player ID: %u", (unsigned)(cp->dpnidPlayer));
 			
-			for(int i = 0; i < inflight_messages; ++i)
+			for(int i = 0; i < phase->concurrent_messages; ++i)
 			{
 				int this_msg_size_idx = 0;
 				std::vector<unsigned char> buf(MESSAGE_SIZES[this_msg_size_idx]);
@@ -427,7 +445,7 @@ static void print_stats()
 		unsigned bps      = l_msg_total_recv_bytes / stats_period_s;
 		
 		timed_printf("concurrent = %d, msg/sec = %u, send us = %u, rtt us = %u, KiB/s = %u",
-			inflight_messages, (unsigned)(l_msg_num_complete / stats_period_s), send_avg, rtt_avg, (bps / 1024));
+			phase->concurrent_messages, (unsigned)(l_msg_num_complete / stats_period_s), send_avg, rtt_avg, (bps / 1024));
 	}
 	
 	usage_time = now_ms() + STATS_INTERVAL;

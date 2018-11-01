@@ -48,8 +48,8 @@ int main(int argc, char **argv)
 	 * Each of these will increase as the test runs.
 	*/
 	
-	int64_t reconstruct_interval  = (120 * 1000);
-	int64_t reinitialise_interval = (30  * 1000);
+	int64_t reconstruct_interval  = (86400 * 1000);
+	int64_t reinitialise_interval = (86400 * 1000);
 	
 	start_time = now_ms();
 	int64_t end_time = start_time + TEST_DURATION;
