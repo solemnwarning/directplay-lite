@@ -320,7 +320,7 @@ static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID
 				*now_p = now;
 				
 				DPNHANDLE s_handle;
-				HRESULT res = instance->SendTo(cp->dpnidPlayer, &bd, 1, 0, now_p, &s_handle, 0);
+				HRESULT res = instance->SendTo(cp->dpnidPlayer, &bd, 1, 0, now_p, &s_handle, DPNSEND_GUARANTEED);
 				if(res != DPNSUCCESS_PENDING)
 				{
 					timed_fprintf(stderr, "IDirectPlay8Peer::SendTo() failed with HRESULT %08x", (unsigned int)(res));
@@ -389,7 +389,7 @@ static HRESULT CALLBACK callback(PVOID pvUserContext, DWORD dwMessageType, PVOID
 				*now_p = now;
 				
 				DPNHANDLE s_handle;
-				HRESULT res = instance->SendTo(r->dpnidSender, &bd, 1, 0, now_p, &s_handle, 0);
+				HRESULT res = instance->SendTo(r->dpnidSender, &bd, 1, 0, now_p, &s_handle, DPNSEND_GUARANTEED);
 				if(res != DPNSUCCESS_PENDING)
 				{
 					timed_fprintf(stderr, "IDirectPlay8Peer::SendTo() failed with HRESULT %08x", (unsigned int)(res));
