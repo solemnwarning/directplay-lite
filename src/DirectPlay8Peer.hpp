@@ -165,6 +165,17 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		
 		std::map<DPNID, unsigned int> player_to_peer_id;
 		
+		struct Group
+		{
+			std::wstring name;
+			std::vector<unsigned char> data;
+			void *ctx;
+			
+			Group(const std::wstring &name, const void *data, size_t data_size, void *ctx = NULL);
+		};
+		
+		std::map<DPNID, Group> groups;
+		
 		/* Serialises access to everything.
 		 *
 		 * All methods and event handlers hold this lock while executing. They will
@@ -185,6 +196,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		
 		Peer *get_peer_by_peer_id(unsigned int peer_id);
 		Peer *get_peer_by_player_id(DPNID player_id);
+		Group *get_group_by_id(DPNID group_id);
 		
 		void handle_udp_socket_event();
 		void io_udp_send(std::unique_lock<std::mutex> &l);
@@ -217,6 +229,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_appdesc(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_destroy_peer(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_terminate_session(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_group_create(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		
 		void connect_check(std::unique_lock<std::mutex> &l);
 		void connect_fail(std::unique_lock<std::mutex> &l, HRESULT hResultCode, const void *pvApplicationReplyData, DWORD dwApplicationReplyDataSize);

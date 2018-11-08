@@ -157,4 +157,16 @@
  * DATA - pvTerminateData passed to IDirectPlay8Peer::TerminateSession()
 */
 
+#define DPLITE_MSGID_GROUP_CREATE 16
+
+/* DPLITE_MSGID_GROUP_CREATE
+ * A group has been created.
+ *
+ * This is sent from the peer which called CreateGroup() to all other peers.
+ *
+ * DWORD   - New group ID
+ * WSTRING - Group name (empty = none)
+ * DATA    - Group data (empty = none)
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */
