@@ -7970,6 +7970,8 @@ TEST(DirectPlay8Peer, CreateGroupSync)
 			EXPECT_EQ(cg->dwSize, sizeof(DPNMSG_CREATE_GROUP));
 			EXPECT_EQ(cg->pvGroupContext, (void*)(0x9876));
 			
+			cg->pvGroupContext = (void*)(0xABCD);
+			
 			h_cg_dpnidGroup = cg->dpnidGroup;
 		}
 		
@@ -7988,6 +7990,8 @@ TEST(DirectPlay8Peer, CreateGroupSync)
 			
 			EXPECT_EQ(cg->dwSize, sizeof(DPNMSG_CREATE_GROUP));
 			EXPECT_EQ(cg->pvGroupContext, (void*)(NULL));
+			
+			cg->pvGroupContext = (void*)(0xBCDE);
 			
 			p1_cg_dpnidGroup = cg->dpnidGroup;
 		}
@@ -8039,6 +8043,30 @@ TEST(DirectPlay8Peer, CreateGroupSync)
 	}
 	
 	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+		EXPECT_NE(buf_size, 0);
+		
+		std::vector<unsigned char> buf(buf_size);
+		DPN_GROUP_INFO *group_info = (DPN_GROUP_INFO*)(buf.data());
+		
+		group_info->dwSize = sizeof(DPN_GROUP_INFO);
+		
+		ASSERT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, group_info, &buf_size, 0), S_OK);
+		
+		EXPECT_EQ(group_info->dwSize, sizeof(DPN_GROUP_INFO));
+		EXPECT_EQ(group_info->dwInfoFlags, (DPNINFO_NAME | DPNINFO_DATA));
+		EXPECT_EQ(std::wstring(group_info->pwszName), std::wstring(L"Test Group"));
+		EXPECT_EQ(std::string((const char*)(group_info->pvData), group_info->dwDataSize), std::string((const char*)(GROUP_DATA), sizeof(GROUP_DATA)));
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(host->GetGroupContext(h_cg_dpnidGroup, &ctx, 0), S_OK);
+		EXPECT_EQ(ctx, (void*)(0xABCD));
+	}
+	
+	{
 		DWORD num_groups = 0;
 		EXPECT_EQ(peer1->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), DPNERR_BUFFERTOOSMALL);
 		EXPECT_EQ(num_groups, 1);
@@ -8054,6 +8082,30 @@ TEST(DirectPlay8Peer, CreateGroupSync)
 		EXPECT_EQ(peer1->EnumPlayersAndGroups(groups, &num_groups, DPNENUM_GROUPS), S_OK);
 		EXPECT_EQ(num_groups, 1);
 		EXPECT_EQ(groups[0], h_cg_dpnidGroup);
+	}
+	
+	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(peer1->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+		EXPECT_NE(buf_size, 0);
+		
+		std::vector<unsigned char> buf(buf_size);
+		DPN_GROUP_INFO *group_info = (DPN_GROUP_INFO*)(buf.data());
+		
+		group_info->dwSize = sizeof(DPN_GROUP_INFO);
+		
+		ASSERT_EQ(peer1->GetGroupInfo(h_cg_dpnidGroup, group_info, &buf_size, 0), S_OK);
+		
+		EXPECT_EQ(group_info->dwSize, sizeof(DPN_GROUP_INFO));
+		EXPECT_EQ(group_info->dwInfoFlags, (DPNINFO_NAME | DPNINFO_DATA));
+		EXPECT_EQ(std::wstring(group_info->pwszName), std::wstring(L"Test Group"));
+		EXPECT_EQ(std::string((const char*)(group_info->pvData), group_info->dwDataSize), std::string((const char*)(GROUP_DATA), sizeof(GROUP_DATA)));
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(peer1->GetGroupContext(p1_cg_dpnidGroup, &ctx, 0), S_OK);
+		EXPECT_EQ(ctx, (void*)(0xBCDE));
 	}
 }
 
@@ -8106,6 +8158,8 @@ TEST(DirectPlay8Peer, CreateGroupAsync)
 			EXPECT_EQ(cg->dwSize, sizeof(DPNMSG_CREATE_GROUP));
 			EXPECT_EQ(cg->pvGroupContext, (void*)(0x9876));
 			
+			cg->pvGroupContext = (void*)(0xABCD);
+			
 			h_cg_dpnidGroup = cg->dpnidGroup;
 		}
 		
@@ -8139,6 +8193,8 @@ TEST(DirectPlay8Peer, CreateGroupAsync)
 			
 			EXPECT_EQ(cg->dwSize, sizeof(DPNMSG_CREATE_GROUP));
 			EXPECT_EQ(cg->pvGroupContext, (void*)(NULL));
+			
+			cg->pvGroupContext = (void*)(0xBCDE);
 			
 			p1_cg_dpnidGroup = cg->dpnidGroup;
 		}
@@ -8184,6 +8240,30 @@ TEST(DirectPlay8Peer, CreateGroupAsync)
 	}
 	
 	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+		EXPECT_NE(buf_size, 0);
+		
+		std::vector<unsigned char> buf(buf_size);
+		DPN_GROUP_INFO *group_info = (DPN_GROUP_INFO*)(buf.data());
+		
+		group_info->dwSize = sizeof(DPN_GROUP_INFO);
+		
+		ASSERT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, group_info, &buf_size, 0), S_OK);
+		
+		EXPECT_EQ(group_info->dwSize, sizeof(DPN_GROUP_INFO));
+		EXPECT_EQ(group_info->dwInfoFlags, (DPNINFO_NAME | DPNINFO_DATA));
+		EXPECT_EQ(std::wstring(group_info->pwszName), std::wstring(L"Test Group"));
+		EXPECT_EQ(std::string((const char*)(group_info->pvData), group_info->dwDataSize), std::string((const char*)(GROUP_DATA), sizeof(GROUP_DATA)));
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(host->GetGroupContext(h_cg_dpnidGroup, &ctx, 0), S_OK);
+		EXPECT_EQ(ctx, (void*)(0xABCD));
+	}
+	
+	{
 		DWORD num_groups = 0;
 		EXPECT_EQ(peer1->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), DPNERR_BUFFERTOOSMALL);
 		EXPECT_EQ(num_groups, 1);
@@ -8193,6 +8273,30 @@ TEST(DirectPlay8Peer, CreateGroupAsync)
 		EXPECT_EQ(peer1->EnumPlayersAndGroups(groups, &num_groups, DPNENUM_GROUPS), S_OK);
 		EXPECT_EQ(num_groups, 1);
 		EXPECT_EQ(groups[0], h_cg_dpnidGroup);
+	}
+	
+	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(peer1->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+		EXPECT_NE(buf_size, 0);
+		
+		std::vector<unsigned char> buf(buf_size);
+		DPN_GROUP_INFO *group_info = (DPN_GROUP_INFO*)(buf.data());
+		
+		group_info->dwSize = sizeof(DPN_GROUP_INFO);
+		
+		ASSERT_EQ(peer1->GetGroupInfo(h_cg_dpnidGroup, group_info, &buf_size, 0), S_OK);
+		
+		EXPECT_EQ(group_info->dwSize, sizeof(DPN_GROUP_INFO));
+		EXPECT_EQ(group_info->dwInfoFlags, (DPNINFO_NAME | DPNINFO_DATA));
+		EXPECT_EQ(std::wstring(group_info->pwszName), std::wstring(L"Test Group"));
+		EXPECT_EQ(std::string((const char*)(group_info->pvData), group_info->dwDataSize), std::string((const char*)(GROUP_DATA), sizeof(GROUP_DATA)));
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(peer1->GetGroupContext(p1_cg_dpnidGroup, &ctx, 0), S_OK);
+		EXPECT_EQ(ctx, (void*)(0xBCDE));
 	}
 }
 
@@ -8226,6 +8330,8 @@ TEST(DirectPlay8Peer, CreateGroupBeforeJoin)
 			
 			EXPECT_EQ(cg->dwSize, sizeof(DPNMSG_CREATE_GROUP));
 			EXPECT_EQ(cg->pvGroupContext, (void*)(0x9876));
+			
+			cg->pvGroupContext = (void*)(0xABCD);
 			
 			h_cg_dpnidGroup = cg->dpnidGroup;
 		}
@@ -8265,6 +8371,30 @@ TEST(DirectPlay8Peer, CreateGroupBeforeJoin)
 		EXPECT_EQ(groups[0], h_cg_dpnidGroup);
 	}
 	
+	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+		EXPECT_NE(buf_size, 0);
+		
+		std::vector<unsigned char> buf(buf_size);
+		DPN_GROUP_INFO *group_info = (DPN_GROUP_INFO*)(buf.data());
+		
+		group_info->dwSize = sizeof(DPN_GROUP_INFO);
+		
+		ASSERT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, group_info, &buf_size, 0), S_OK);
+		
+		EXPECT_EQ(group_info->dwSize, sizeof(DPN_GROUP_INFO));
+		EXPECT_EQ(group_info->dwInfoFlags, (DPNINFO_NAME | DPNINFO_DATA));
+		EXPECT_EQ(std::wstring(group_info->pwszName), std::wstring(L"Test Group"));
+		EXPECT_EQ(std::string((const char*)(group_info->pvData), group_info->dwDataSize), std::string((const char*)(GROUP_DATA), sizeof(GROUP_DATA)));
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(host->GetGroupContext(h_cg_dpnidGroup, &ctx, 0), S_OK);
+		EXPECT_EQ(ctx, (void*)(0xABCD));
+	}
+	
 	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
 	
 	TestPeer peer1("peer1");
@@ -8281,6 +8411,8 @@ TEST(DirectPlay8Peer, CreateGroupBeforeJoin)
 			
 			EXPECT_EQ(cg->dwSize, sizeof(DPNMSG_CREATE_GROUP));
 			EXPECT_EQ(cg->pvGroupContext, (void*)(NULL));
+			
+			cg->pvGroupContext = (void*)(0xBCDE);
 			
 			p1_cg_dpnidGroup = cg->dpnidGroup;
 		}
@@ -8333,6 +8465,497 @@ TEST(DirectPlay8Peer, CreateGroupBeforeJoin)
 		EXPECT_EQ(peer1->EnumPlayersAndGroups(groups, &num_groups, DPNENUM_GROUPS), S_OK);
 		EXPECT_EQ(num_groups, 1);
 		EXPECT_EQ(groups[0], h_cg_dpnidGroup);
+	}
+	
+	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(peer1->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_BUFFERTOOSMALL);
+		EXPECT_NE(buf_size, 0);
+		
+		std::vector<unsigned char> buf(buf_size);
+		DPN_GROUP_INFO *group_info = (DPN_GROUP_INFO*)(buf.data());
+		
+		group_info->dwSize = sizeof(DPN_GROUP_INFO);
+		
+		ASSERT_EQ(peer1->GetGroupInfo(h_cg_dpnidGroup, group_info, &buf_size, 0), S_OK);
+		
+		EXPECT_EQ(group_info->dwSize, sizeof(DPN_GROUP_INFO));
+		EXPECT_EQ(group_info->dwInfoFlags, (DPNINFO_NAME | DPNINFO_DATA));
+		EXPECT_EQ(std::wstring(group_info->pwszName), std::wstring(L"Test Group"));
+		EXPECT_EQ(std::string((const char*)(group_info->pvData), group_info->dwDataSize), std::string((const char*)(GROUP_DATA), sizeof(GROUP_DATA)));
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(peer1->GetGroupContext(p1_cg_dpnidGroup, &ctx, 0), S_OK);
+		EXPECT_EQ(ctx, (void*)(0xBCDE));
+	}
+}
+
+TEST(DirectPlay8Peer, DestroyGroupSync)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xABCD);
+			
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xBCDE);
+			
+			p1_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_GROUP);
+		if(dwMessageType == DPN_MSGID_DESTROY_GROUP)
+		{
+			DPNMSG_DESTROY_GROUP *dg = (DPNMSG_DESTROY_GROUP*)(pMessage);
+			
+			EXPECT_EQ(dg->dwSize, sizeof(DPNMSG_DESTROY_GROUP));
+			EXPECT_EQ(dg->dpnidGroup, h_cg_dpnidGroup);
+			EXPECT_EQ(dg->pvGroupContext, (void*)(0xABCD));
+			EXPECT_EQ(dg->dwReason, DPNDESTROYGROUPREASON_NORMAL);
+		}
+		
+		return S_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_GROUP);
+		if(dwMessageType == DPN_MSGID_DESTROY_GROUP)
+		{
+			DPNMSG_DESTROY_GROUP *dg = (DPNMSG_DESTROY_GROUP*)(pMessage);
+			
+			EXPECT_EQ(dg->dwSize, sizeof(DPNMSG_DESTROY_GROUP));
+			EXPECT_EQ(dg->dpnidGroup, p1_cg_dpnidGroup);
+			EXPECT_EQ(dg->pvGroupContext, (void*)(0xBCDE));
+			EXPECT_EQ(dg->dwReason, DPNDESTROYGROUPREASON_NORMAL);
+		}
+		
+		return S_OK;
+	});
+	
+	ASSERT_EQ(host->DestroyGroup(
+		h_cg_dpnidGroup,        /* idGroup */
+		NULL,                   /* pvAsyncContext */
+		NULL,                   /* phAsyncHandle */
+		DPNDESTROYGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	{
+		DWORD num_groups = 0;
+		EXPECT_EQ(host->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), S_OK);
+		EXPECT_EQ(num_groups, 0);
+	}
+	
+	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(host->GetGroupInfo(h_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_INVALIDGROUP);
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(host->GetGroupContext(h_cg_dpnidGroup, &ctx, 0), DPNERR_INVALIDGROUP);
+	}
+	
+	{
+		DWORD num_groups = 0;
+		EXPECT_EQ(peer1->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), S_OK);
+		EXPECT_EQ(num_groups, 0);
+	}
+	
+	{
+		DWORD buf_size = 0;
+		EXPECT_EQ(peer1->GetGroupInfo(p1_cg_dpnidGroup, NULL, &buf_size, 0), DPNERR_INVALIDGROUP);
+	}
+	
+	{
+		void *ctx;
+		EXPECT_EQ(peer1->GetGroupContext(p1_cg_dpnidGroup, &ctx, 0), DPNERR_INVALIDGROUP);
+	}
+}
+
+TEST(DirectPlay8Peer, DestroyGroupAsync)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xABCD);
+			
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xBCDE);
+			
+			p1_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	DPNHANDLE handle;
+	
+	host.expect_begin();
+	host.expect_push([&peer1, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_GROUP);
+		if(dwMessageType == DPN_MSGID_DESTROY_GROUP)
+		{
+			DPNMSG_DESTROY_GROUP *dg = (DPNMSG_DESTROY_GROUP*)(pMessage);
+			
+			EXPECT_EQ(dg->dwSize, sizeof(DPNMSG_DESTROY_GROUP));
+			EXPECT_EQ(dg->dpnidGroup, h_cg_dpnidGroup);
+			EXPECT_EQ(dg->pvGroupContext, (void*)(0xABCD));
+			EXPECT_EQ(dg->dwReason, DPNDESTROYGROUPREASON_NORMAL);
+		}
+		
+		return S_OK;
+	});
+	host.expect_push([&handle](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_ASYNC_OP_COMPLETE);
+		if(dwMessageType == DPN_MSGID_ASYNC_OP_COMPLETE)
+		{
+			DPNMSG_ASYNC_OP_COMPLETE *oc = (DPNMSG_ASYNC_OP_COMPLETE*)(pMessage);
+			
+			EXPECT_EQ(oc->dwSize, sizeof(DPNMSG_ASYNC_OP_COMPLETE));
+			EXPECT_EQ(oc->hAsyncOp, handle);
+			EXPECT_EQ(oc->pvUserContext, (void*)(0x8765));
+			EXPECT_EQ(oc->hResultCode, S_OK);
+		}
+		
+		return S_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&peer1, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_GROUP);
+		if(dwMessageType == DPN_MSGID_DESTROY_GROUP)
+		{
+			DPNMSG_DESTROY_GROUP *dg = (DPNMSG_DESTROY_GROUP*)(pMessage);
+			
+			EXPECT_EQ(dg->dwSize, sizeof(DPNMSG_DESTROY_GROUP));
+			EXPECT_EQ(dg->dpnidGroup, p1_cg_dpnidGroup);
+			EXPECT_EQ(dg->pvGroupContext, (void*)(0xBCDE));
+			EXPECT_EQ(dg->dwReason, DPNDESTROYGROUPREASON_NORMAL);
+		}
+		
+		return S_OK;
+	});
+	
+	ASSERT_EQ(host->DestroyGroup(
+		h_cg_dpnidGroup,  /* idGroup */
+		(void*)(0x8765),  /* pvAsyncContext */
+		&handle,          /* phAsyncHandle */
+		0),               /* dwFlags */
+		DPNSUCCESS_PENDING);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	{
+		DWORD num_groups = 0;
+		EXPECT_EQ(host->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), S_OK);
+		EXPECT_EQ(num_groups, 0);
+	}
+	
+	{
+		DWORD num_groups = 0;
+		EXPECT_EQ(peer1->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), S_OK);
+		EXPECT_EQ(num_groups, 0);
+	}
+}
+
+TEST(DirectPlay8Peer, DestroyGroupBeforeJoin)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xABCD);
+			
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	host.expect_end();
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_DESTROY_GROUP);
+		if(dwMessageType == DPN_MSGID_DESTROY_GROUP)
+		{
+			DPNMSG_DESTROY_GROUP *dg = (DPNMSG_DESTROY_GROUP*)(pMessage);
+			
+			EXPECT_EQ(dg->dwSize, sizeof(DPNMSG_DESTROY_GROUP));
+			EXPECT_EQ(dg->dpnidGroup, h_cg_dpnidGroup);
+			EXPECT_EQ(dg->pvGroupContext, (void*)(0xABCD));
+			EXPECT_EQ(dg->dwReason, DPNDESTROYGROUPREASON_NORMAL);
+		}
+		
+		return S_OK;
+	});
+	
+	ASSERT_EQ(host->DestroyGroup(
+		h_cg_dpnidGroup,        /* idGroup */
+		NULL,                   /* pvAsyncContext */
+		NULL,                   /* phAsyncHandle */
+		DPNDESTROYGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	host.expect_end();
+	
+	Sleep(250);
+	
+	{
+		DWORD num_groups = 0;
+		EXPECT_EQ(host->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), S_OK);
+		EXPECT_EQ(num_groups, 0);
+	}
+	
+	TestPeer peer1("peer1");
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_PLAYER);
+		return S_OK;
+	});
+	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_PLAYER);
+		return S_OK;
+	});
+	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CONNECT_COMPLETE);
+		return S_OK;
+	});
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	
+	{
+		DWORD num_groups = 0;
+		EXPECT_EQ(peer1->EnumPlayersAndGroups(NULL, &num_groups, DPNENUM_GROUPS), S_OK);
+		EXPECT_EQ(num_groups, 0);
 	}
 }
 
@@ -9053,5 +9676,639 @@ TEST(DirectPlay8Peer, AddPlayerToGroupByPeer)
 		EXPECT_EQ(peer1->EnumGroupMembers(p1_cg_dpnidGroup, members, &num_members, 0), S_OK);
 		EXPECT_EQ(num_members, 1);
 		EXPECT_EQ(members[0], host.first_cp_dpnidPlayer);
+	}
+}
+
+TEST(DirectPlay8Peer, RemovePlayerFromGroupSync)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xABCD);
+			
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xBCDE);
+			
+			p1_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	ASSERT_EQ(host->AddPlayerToGroup(
+		h_cg_dpnidGroup,            /* idGroup */
+		host.first_cp_dpnidPlayer,  /* idClient */
+		NULL,                       /* pvAsyncContext */
+		NULL,                       /* phAsyncHandle */
+		DPNADDPLAYERTOGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP);
+		if(dwMessageType == DPN_MSGID_REMOVE_PLAYER_FROM_GROUP)
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP *rp = (DPNMSG_REMOVE_PLAYER_FROM_GROUP*)(pMessage);
+			
+			EXPECT_EQ(rp->dwSize, sizeof(DPNMSG_REMOVE_PLAYER_FROM_GROUP));
+			EXPECT_EQ(rp->dpnidGroup, h_cg_dpnidGroup);
+			EXPECT_EQ(rp->pvGroupContext, (void*)(0xABCD));
+			EXPECT_EQ(rp->dpnidPlayer, host.first_cp_dpnidPlayer);
+			EXPECT_EQ(rp->pvPlayerContext, (void*)~(uintptr_t)(host.first_cp_dpnidPlayer));
+		}
+		
+		return S_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP);
+		if(dwMessageType == DPN_MSGID_REMOVE_PLAYER_FROM_GROUP)
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP *rp = (DPNMSG_REMOVE_PLAYER_FROM_GROUP*)(pMessage);
+			
+			EXPECT_EQ(rp->dwSize, sizeof(DPNMSG_REMOVE_PLAYER_FROM_GROUP));
+			EXPECT_EQ(rp->dpnidGroup, p1_cg_dpnidGroup);
+			EXPECT_EQ(rp->pvGroupContext, (void*)(0xBCDE));
+			EXPECT_EQ(rp->dpnidPlayer, host.first_cp_dpnidPlayer);
+			EXPECT_EQ(rp->pvPlayerContext, (void*)~(uintptr_t)(host.first_cp_dpnidPlayer));
+		}
+		
+		return S_OK;
+	});
+	
+	ASSERT_EQ(host->RemovePlayerFromGroup(
+		h_cg_dpnidGroup,                 /* idGroup */
+		host.first_cp_dpnidPlayer,       /* idClient */
+		NULL,                            /* pvAsyncContext */
+		NULL,                            /* phAsyncHandle */
+		DPNREMOVEPLAYERFROMGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(host->EnumGroupMembers(h_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
+	}
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(peer1->EnumGroupMembers(p1_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
+	}
+}
+
+TEST(DirectPlay8Peer, RemovePlayerFromGroupAsync)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xABCD);
+			
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xBCDE);
+			
+			p1_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	ASSERT_EQ(host->AddPlayerToGroup(
+		h_cg_dpnidGroup,            /* idGroup */
+		host.first_cp_dpnidPlayer,  /* idClient */
+		NULL,                       /* pvAsyncContext */
+		NULL,                       /* phAsyncHandle */
+		DPNADDPLAYERTOGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	DPNHANDLE handle;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP);
+		if(dwMessageType == DPN_MSGID_REMOVE_PLAYER_FROM_GROUP)
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP *rp = (DPNMSG_REMOVE_PLAYER_FROM_GROUP*)(pMessage);
+			
+			EXPECT_EQ(rp->dwSize, sizeof(DPNMSG_REMOVE_PLAYER_FROM_GROUP));
+			EXPECT_EQ(rp->dpnidGroup, h_cg_dpnidGroup);
+			EXPECT_EQ(rp->pvGroupContext, (void*)(0xABCD));
+			EXPECT_EQ(rp->dpnidPlayer, host.first_cp_dpnidPlayer);
+			EXPECT_EQ(rp->pvPlayerContext, (void*)~(uintptr_t)(host.first_cp_dpnidPlayer));
+		}
+		
+		return S_OK;
+	});
+	host.expect_push([&handle](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_ASYNC_OP_COMPLETE);
+		if(dwMessageType == DPN_MSGID_ASYNC_OP_COMPLETE)
+		{
+			DPNMSG_ASYNC_OP_COMPLETE *oc = (DPNMSG_ASYNC_OP_COMPLETE*)(pMessage);
+			
+			EXPECT_EQ(oc->dwSize, sizeof(DPNMSG_ASYNC_OP_COMPLETE));
+			EXPECT_EQ(oc->hAsyncOp, handle);
+			EXPECT_EQ(oc->pvUserContext, (void*)(0x1234));
+			EXPECT_EQ(oc->hResultCode, S_OK);
+		}
+		
+		return S_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP);
+		if(dwMessageType == DPN_MSGID_REMOVE_PLAYER_FROM_GROUP)
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP *rp = (DPNMSG_REMOVE_PLAYER_FROM_GROUP*)(pMessage);
+			
+			EXPECT_EQ(rp->dwSize, sizeof(DPNMSG_REMOVE_PLAYER_FROM_GROUP));
+			EXPECT_EQ(rp->dpnidGroup, p1_cg_dpnidGroup);
+			EXPECT_EQ(rp->pvGroupContext, (void*)(0xBCDE));
+			EXPECT_EQ(rp->dpnidPlayer, host.first_cp_dpnidPlayer);
+			EXPECT_EQ(rp->pvPlayerContext, (void*)~(uintptr_t)(host.first_cp_dpnidPlayer));
+		}
+		
+		return S_OK;
+	});
+	
+	ASSERT_EQ(host->RemovePlayerFromGroup(
+		h_cg_dpnidGroup,            /* idGroup */
+		host.first_cp_dpnidPlayer,  /* idClient */
+		(void*)(0x1234),            /* pvAsyncContext */
+		&handle,                    /* phAsyncHandle */
+		0),                         /* dwFlags */
+		DPNSUCCESS_PENDING);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(host->EnumGroupMembers(h_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
+	}
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(peer1->EnumGroupMembers(p1_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
+	}
+}
+
+TEST(DirectPlay8Peer, RemovePlayerFromGroupBeforeJoin)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	Sleep(100);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	host.expect_end();
+	
+	ASSERT_EQ(host->AddPlayerToGroup(
+		h_cg_dpnidGroup,            /* idGroup */
+		host.first_cp_dpnidPlayer,  /* idClient */
+		NULL,                       /* pvAsyncContext */
+		NULL,                       /* phAsyncHandle */
+		DPNADDPLAYERTOGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	ASSERT_EQ(host->RemovePlayerFromGroup(
+		h_cg_dpnidGroup,                 /* idGroup */
+		host.first_cp_dpnidPlayer,       /* idClient */
+		NULL,                            /* pvAsyncContext */
+		NULL,                            /* phAsyncHandle */
+		DPNREMOVEPLAYERFROMGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	TestPeer peer1("peer1");
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			p1_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_PLAYER);
+		return S_OK;
+	});
+	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_PLAYER);
+		return S_OK;
+	});
+	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CONNECT_COMPLETE);
+		return S_OK;
+	});
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(peer1->EnumGroupMembers(p1_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
+	}
+}
+
+TEST(DirectPlay8Peer, RemovePlayerFromGroupByPeer)
+{
+	DPN_APPLICATION_DESC app_desc;
+	memset(&app_desc, 0, sizeof(app_desc));
+	
+	app_desc.dwSize          = sizeof(app_desc);
+	app_desc.guidApplication = APP_GUID_1;
+	app_desc.pwszSessionName = L"Session 1";
+	
+	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
+	
+	TestPeer host("host");
+	ASSERT_EQ(host->Host(&app_desc, &(host_addr.instance), 1, NULL, NULL, 0, 0), S_OK);
+	
+	IDP8AddressInstance connect_addr(CLSID_DP8SP_TCPIP, L"127.0.0.1", PORT);
+	
+	TestPeer peer1("peer1");
+	ASSERT_EQ(peer1->Connect(
+		&app_desc,        /* pdnAppDesc */
+		connect_addr,     /* pHostAddr */
+		NULL,             /* pDeviceInfo */
+		NULL,             /* pdnSecurity */
+		NULL,             /* pdnCredentials */
+		NULL,             /* pvUserConnectData */
+		0,                /* dwUserConnectDataSize */
+		0,                /* pvPlayerContext */
+		NULL,             /* pvAsyncContext */
+		NULL,             /* phAsyncHandle */
+		DPNCONNECT_SYNC   /* dwFlags */
+	), S_OK);
+	
+	Sleep(100);
+	
+	DPNID h_cg_dpnidGroup;
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xABCD);
+			
+			h_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPNID p1_cg_dpnidGroup;
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_CREATE_GROUP);
+		if(dwMessageType == DPN_MSGID_CREATE_GROUP)
+		{
+			DPNMSG_CREATE_GROUP *cg = (DPNMSG_CREATE_GROUP*)(pMessage);
+			cg->pvGroupContext = (void*)(0xBCDE);
+			
+			p1_cg_dpnidGroup = cg->dpnidGroup;
+		}
+		
+		return S_OK;
+	});
+	
+	DPN_GROUP_INFO group_info;
+	memset(&group_info, 0, sizeof(group_info));
+	
+	group_info.dwSize = sizeof(group_info);
+	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
+	group_info.pwszName = L"Test Group";
+	group_info.pvData = NULL;
+	group_info.dwDataSize = 0;
+	group_info.dwGroupFlags = 0;
+	
+	ASSERT_EQ(host->CreateGroup(
+		&group_info,           /* pdpnGroupInfo */
+		NULL,                  /* pvGroupContext */
+		NULL,                  /* pvAsyncContext */
+		NULL,                  /* phAsyncHandle */
+		DPNCREATEGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	ASSERT_EQ(host->AddPlayerToGroup(
+		h_cg_dpnidGroup,            /* idGroup */
+		host.first_cp_dpnidPlayer,  /* idClient */
+		NULL,                       /* pvAsyncContext */
+		NULL,                       /* phAsyncHandle */
+		DPNADDPLAYERTOGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	host.expect_begin();
+	host.expect_push([&host, &h_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP);
+		if(dwMessageType == DPN_MSGID_REMOVE_PLAYER_FROM_GROUP)
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP *rp = (DPNMSG_REMOVE_PLAYER_FROM_GROUP*)(pMessage);
+			
+			EXPECT_EQ(rp->dwSize, sizeof(DPNMSG_REMOVE_PLAYER_FROM_GROUP));
+			EXPECT_EQ(rp->dpnidGroup, h_cg_dpnidGroup);
+			EXPECT_EQ(rp->pvGroupContext, (void*)(0xABCD));
+			EXPECT_EQ(rp->dpnidPlayer, host.first_cp_dpnidPlayer);
+			EXPECT_EQ(rp->pvPlayerContext, (void*)~(uintptr_t)(host.first_cp_dpnidPlayer));
+		}
+		
+		return S_OK;
+	});
+	
+	peer1.expect_begin();
+	peer1.expect_push([&host, &p1_cg_dpnidGroup](DWORD dwMessageType, PVOID pMessage)
+	{
+		EXPECT_EQ(dwMessageType, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP);
+		if(dwMessageType == DPN_MSGID_REMOVE_PLAYER_FROM_GROUP)
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP *rp = (DPNMSG_REMOVE_PLAYER_FROM_GROUP*)(pMessage);
+			
+			EXPECT_EQ(rp->dwSize, sizeof(DPNMSG_REMOVE_PLAYER_FROM_GROUP));
+			EXPECT_EQ(rp->dpnidGroup, p1_cg_dpnidGroup);
+			EXPECT_EQ(rp->pvGroupContext, (void*)(0xBCDE));
+			EXPECT_EQ(rp->dpnidPlayer, host.first_cp_dpnidPlayer);
+			EXPECT_EQ(rp->pvPlayerContext, (void*)~(uintptr_t)(host.first_cp_dpnidPlayer));
+		}
+		
+		return S_OK;
+	});
+	
+	ASSERT_EQ(peer1->RemovePlayerFromGroup(
+		p1_cg_dpnidGroup,                /* idGroup */
+		host.first_cp_dpnidPlayer,       /* idClient */
+		NULL,                            /* pvAsyncContext */
+		NULL,                            /* phAsyncHandle */
+		DPNREMOVEPLAYERFROMGROUP_SYNC),  /* dwFlags */
+		S_OK);
+	
+	Sleep(250);
+	
+	peer1.expect_end();
+	host.expect_end();
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(host->EnumGroupMembers(h_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
+	}
+	
+	{
+		DWORD num_members = 0;
+		EXPECT_EQ(peer1->EnumGroupMembers(p1_cg_dpnidGroup, NULL, &num_members, 0), S_OK);
+		EXPECT_EQ(num_members, 0);
 	}
 }
