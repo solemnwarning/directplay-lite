@@ -24,6 +24,7 @@ class AsyncHandleAllocator
 		DPNHANDLE next_send_id;
 		DPNHANDLE next_pinfo_id;
 		DPNHANDLE next_cgroup_id;
+		DPNHANDLE next_dgroup_id;
 		
 	public:
 		static const DPNHANDLE TYPE_MASK    = 0x1C000000;
@@ -33,6 +34,7 @@ class AsyncHandleAllocator
 		static const DPNHANDLE TYPE_SEND    = 0x08000000; /* SendTo() */
 		static const DPNHANDLE TYPE_PINFO   = 0x0C000000; /* SetPeerInfo() */
 		static const DPNHANDLE TYPE_CGROUP  = 0x10000000; /* CreateGroup() */
+		static const DPNHANDLE TYPE_DGROUP  = 0x14000000; /* DestroyGroup() */
 		
 		AsyncHandleAllocator();
 		
@@ -41,6 +43,7 @@ class AsyncHandleAllocator
 		DPNHANDLE new_send();
 		DPNHANDLE new_pinfo();
 		DPNHANDLE new_cgroup();
+		DPNHANDLE new_dgroup();
 };
 
 #endif /* !DPLITE_ASYNCHANDLEALLOCATOR_HPP */

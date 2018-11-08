@@ -72,3 +72,16 @@ DPNHANDLE AsyncHandleAllocator::new_cgroup()
 	
 	return handle;
 }
+
+DPNHANDLE AsyncHandleAllocator::new_dgroup()
+{
+	DPNHANDLE handle = next_dgroup_id++ | TYPE_DGROUP;
+	
+	next_dgroup_id &= ~TYPE_MASK;
+	if(next_dgroup_id == 0)
+	{
+		next_dgroup_id = 1;
+	}
+	
+	return handle;
+}

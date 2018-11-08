@@ -175,6 +175,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		};
 		
 		std::map<DPNID, Group> groups;
+		std::set<DPNID> destroyed_groups;
 		
 		/* Serialises access to everything.
 		 *
@@ -230,6 +231,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_destroy_peer(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_terminate_session(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_group_create(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_group_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		
 		void connect_check(std::unique_lock<std::mutex> &l);
 		void connect_fail(std::unique_lock<std::mutex> &l, HRESULT hResultCode, const void *pvApplicationReplyData, DWORD dwApplicationReplyDataSize);

@@ -169,4 +169,18 @@
  * DATA    - Group data (empty = none)
 */
 
+#define DPLITE_MSGID_GROUP_DESTROY 17
+
+/* DPLITE_MSGID_GROUP_DESTROY
+ * A group has been destroyed.
+ *
+ * This is sent from the peer which called DestroyGroup() to all other peers.
+ * Once this message has been received, the group ID is permenantly unavailable
+ * to be used in the session, this is to ensure a group isn't re-created by
+ * receiving a message about a group from a different peer that was sent while
+ * the group still existed after this was processed.
+ *
+ * DWORD - Group ID
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */

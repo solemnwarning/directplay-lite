@@ -1354,7 +1354,145 @@ HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, 
 
 HRESULT DirectPlay8Peer::DestroyGroup(CONST DPNID idGroup, PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::DestroyGroup");
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
+	{
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOCONNECTION;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		case STATE_CONNECT_FAILED:      return DPNERR_CONNECTING;
+		case STATE_CONNECTED:           break;
+		case STATE_CLOSING:             return DPNERR_CONNECTIONLOST;
+		case STATE_TERMINATED:          return DPNERR_CONNECTIONLOST;
+	}
+	
+	Group *group = get_group_by_id(idGroup);
+	if(group == NULL)
+	{
+		return DPNERR_INVALIDGROUP;
+	}
+	
+	if(destroyed_groups.find(idGroup) != destroyed_groups.end())
+	{
+		/* The group is there, but we're already destroying it. */
+		return DPNERR_INVALIDGROUP;
+	}
+	
+	DPNHANDLE async_handle;
+	if(!(dwFlags & DPNDESTROYGROUP_SYNC))
+	{
+		async_handle = handle_alloc.new_dgroup();
+		
+		if(phAsyncHandle != NULL)
+		{
+			*phAsyncHandle = async_handle;
+		}
+	}
+	
+	destroyed_groups.insert(idGroup);
+	
+	/* Send DPLITE_MSGID_GROUP_DESTROY to each PS_CONNECTED peer. */
+	
+	PacketSerialiser group_destroy(DPLITE_MSGID_GROUP_DESTROY);
+	group_destroy.append_dword(idGroup);
+	
+	int *pending = new int(1);
+	std::condition_variable cv;
+	
+	auto complete =
+		[this, pending, dwFlags, &cv, async_handle, pvAsyncContext]
+		(std::unique_lock<std::mutex> &l)
+	{
+		if(--(*pending) == 0)
+		{
+			if(dwFlags & DPNDESTROYGROUP_SYNC)
+			{
+				cv.notify_one();
+			}
+			else{
+				DPNMSG_ASYNC_OP_COMPLETE oc;
+				memset(&oc, 0, sizeof(oc));
+				
+				oc.dwSize        = sizeof(oc);
+				oc.hAsyncOp      = async_handle;
+				oc.pvUserContext = pvAsyncContext;
+				oc.hResultCode   = S_OK;
+				
+				l.unlock();
+				message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
+				l.lock();
+				
+				delete pending;
+			}
+		}
+	};
+	
+	for(auto p = peers.begin(); p != peers.end(); ++p)
+	{
+		Peer *peer = p->second;
+		
+		if(peer->state == Peer::PS_CONNECTED)
+		{
+			++(*pending);
+			
+			peer->sq.send(SendQueue::SEND_PRI_HIGH, group_destroy, NULL,
+				[complete]
+				(std::unique_lock<std::mutex> &l, HRESULT result)
+				{
+					if(result != S_OK)
+					{
+						log_printf("Failed to send DPLITE_MSGID_GROUP_DESTROY, session may be out of sync!");
+					}
+					
+					complete(l);
+				});
+		}
+	}
+	
+	/* Raise local DPNMSG_DESTROY_GROUP and then destroy the group.
+	 * TODO: Do this in a properly managed worker thread.
+	*/
+	
+	std::thread t([this, idGroup, complete]()
+	{
+		std::unique_lock<std::mutex> l(lock);
+		
+		Group *group = get_group_by_id(idGroup);
+		if(group != NULL)
+		{
+			DPNMSG_DESTROY_GROUP dg;
+			memset(&dg, 0, sizeof(dg));
+			
+			dg.dwSize         = sizeof(dg);
+			dg.dpnidGroup     = idGroup;
+			dg.pvGroupContext = group->ctx;
+			dg.dwReason       = DPNDESTROYGROUPREASON_NORMAL;
+			
+			l.unlock();
+			message_handler(message_handler_ctx, DPN_MSGID_DESTROY_GROUP, &dg);
+			l.lock();
+			
+			groups.erase(idGroup);
+		}
+		
+		complete(l);
+	});
+	
+	t.detach();
+	
+	if(dwFlags & DPNDESTROYGROUP_SYNC)
+	{
+		cv.wait(l, [&pending]() { return (*pending == 0); });
+		delete pending;
+		
+		return S_OK;
+	}
+	else{
+		return DPNSUCCESS_PENDING;
+	}
 }
 
 HRESULT DirectPlay8Peer::AddPlayerToGroup(CONST DPNID idGroup, CONST DPNID idClient, PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
@@ -1951,6 +2089,8 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 	delete worker_pool;
 	l.lock();
 	worker_pool = NULL;
+	
+	destroyed_groups.clear();
 	
 	WSACleanup();
 	
@@ -2984,6 +3124,12 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 						break;
 					}
 					
+					case DPLITE_MSGID_GROUP_DESTROY:
+					{
+						handle_group_destroy(l, peer_id, *pd);
+						break;
+					}
+					
 					default:
 						log_printf(
 							"Unexpected message type %u received from peer %u",
@@ -3586,12 +3732,29 @@ void DirectPlay8Peer::handle_host_connect_request(std::unique_lock<std::mutex> &
 		
 		peer->state = Peer::PS_CONNECTED;
 		
+		/* Send DPLITE_MSGID_GROUP_DESTROY for each destroyed group. */
+		
+		for(auto di = destroyed_groups.begin(); di != destroyed_groups.end(); ++di)
+		{
+			PacketSerialiser group_destroy(DPLITE_MSGID_GROUP_DESTROY);
+			group_destroy.append_dword(*di);
+			
+			peer->sq.send(SendQueue::SEND_PRI_HIGH, group_destroy, NULL,
+				[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+		}
+		
 		/* Send DPLITE_MSGID_GROUP_CREATE for each group. */
 		
 		for(auto gi = groups.begin(); gi != groups.end(); ++gi)
 		{
 			DPNID group_id = gi->first;
 			Group *group   = &(gi->second);
+			
+			if(destroyed_groups.find(group_id) != destroyed_groups.end())
+			{
+				/* Group is being destroyed. */
+				continue;
+			}
 			
 			PacketSerialiser group_create(DPLITE_MSGID_GROUP_CREATE);
 			group_create.append_dword(group_id);
@@ -3918,12 +4081,29 @@ void DirectPlay8Peer::handle_connect_peer(std::unique_lock<std::mutex> &l, unsig
 	
 	peer->state = Peer::PS_CONNECTED;
 	
+	/* Send DPLITE_MSGID_GROUP_DESTROY for each destroyed group. */
+	
+	for(auto di = destroyed_groups.begin(); di != destroyed_groups.end(); ++di)
+	{
+		PacketSerialiser group_destroy(DPLITE_MSGID_GROUP_DESTROY);
+		group_destroy.append_dword(*di);
+		
+		peer->sq.send(SendQueue::SEND_PRI_HIGH, group_destroy, NULL,
+			[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+	}
+	
 	/* Send DPLITE_MSGID_GROUP_CREATE for each group. */
 	
 	for(auto gi = groups.begin(); gi != groups.end(); ++gi)
 	{
 		DPNID group_id = gi->first;
 		Group *group   = &(gi->second);
+		
+		if(destroyed_groups.find(group_id) != destroyed_groups.end())
+		{
+			/* Group is being destroyed. */
+			continue;
+		}
 		
 		PacketSerialiser group_create(DPLITE_MSGID_GROUP_CREATE);
 		group_create.append_dword(group_id);
@@ -4394,6 +4574,12 @@ void DirectPlay8Peer::handle_group_create(std::unique_lock<std::mutex> &l, unsig
 			return;
 		}
 		
+		if(destroyed_groups.find(group_id) != destroyed_groups.end())
+		{
+			/* Group has already been destroyed. */
+			return;
+		}
+		
 		groups.emplace(
 				std::piecewise_construct,
 				std::forward_as_tuple(group_id),
@@ -4423,6 +4609,56 @@ void DirectPlay8Peer::handle_group_create(std::unique_lock<std::mutex> &l, unsig
 	catch(const PacketDeserialiser::Error &e)
 	{
 		log_printf("Received invalid DPLITE_MSGID_TERMINATE_SESSION from peer %u: %s",
+			peer_id, e.what());
+	}
+}
+
+void DirectPlay8Peer::handle_group_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DPNID group_id = pd.get_dword(0);
+		
+		if(peer->state != Peer::PS_CONNECTED
+			&& peer->state != Peer::PS_REQUESTING_HOST
+			&& peer->state != Peer::PS_REQUESTING_PEER)
+		{
+			log_printf("Received unexpected DPLITE_MSGID_GROUP_DESTROY from peer %u, in state %u",
+				peer_id, (unsigned)(peer->state));
+			return;
+		}
+		
+		if(destroyed_groups.find(group_id) != destroyed_groups.end())
+		{
+			/* Group is already in the process of being destroyed. */
+			return;
+		}
+		
+		destroyed_groups.insert(group_id);
+		
+		Group *group = get_group_by_id(group_id);
+		if(group != NULL)
+		{
+			DPNMSG_DESTROY_GROUP dg;
+			memset(&dg, 0, sizeof(dg));
+			
+			dg.dwSize         = sizeof(dg);
+			dg.dpnidGroup     = group_id;
+			dg.pvGroupContext = group->ctx;
+			dg.dwReason       = DPNDESTROYGROUPREASON_NORMAL;
+			
+			l.unlock();
+			message_handler(message_handler_ctx, DPN_MSGID_DESTROY_GROUP, &dg);
+			l.lock();
+			
+			groups.erase(group_id);
+		}
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		log_printf("Received invalid DPLITE_MSGID_GROUP_DESTROY from peer %u: %s",
 			peer_id, e.what());
 	}
 }
