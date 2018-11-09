@@ -147,6 +147,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			
 			DWORD alloc_ack_id();
 			void register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
+			void send_ack(DWORD ack_id, HRESULT result);
 		};
 		
 		DPNID local_player_id;
@@ -170,6 +171,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			std::wstring name;
 			std::vector<unsigned char> data;
 			void *ctx;
+			
+			std::set<DPNID> player_ids;
 			
 			Group(const std::wstring &name, const void *data, size_t data_size, void *ctx = NULL);
 		};
@@ -232,6 +235,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_terminate_session(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_group_create(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_group_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_group_join(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_group_joined(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		
 		void connect_check(std::unique_lock<std::mutex> &l);
 		void connect_fail(std::unique_lock<std::mutex> &l, HRESULT hResultCode, const void *pvApplicationReplyData, DWORD dwApplicationReplyDataSize);

@@ -25,16 +25,18 @@ class AsyncHandleAllocator
 		DPNHANDLE next_pinfo_id;
 		DPNHANDLE next_cgroup_id;
 		DPNHANDLE next_dgroup_id;
+		DPNHANDLE next_apgroup_id;
 		
 	public:
-		static const DPNHANDLE TYPE_MASK    = 0x1C000000;
+		static const DPNHANDLE TYPE_MASK    = 0xE0000000;
 		
 		static const DPNHANDLE TYPE_ENUM    = 0x00000000; /* EnumHosts() */
-		static const DPNHANDLE TYPE_CONNECT = 0x04000000; /* Connect() */
-		static const DPNHANDLE TYPE_SEND    = 0x08000000; /* SendTo() */
-		static const DPNHANDLE TYPE_PINFO   = 0x0C000000; /* SetPeerInfo() */
-		static const DPNHANDLE TYPE_CGROUP  = 0x10000000; /* CreateGroup() */
-		static const DPNHANDLE TYPE_DGROUP  = 0x14000000; /* DestroyGroup() */
+		static const DPNHANDLE TYPE_CONNECT = 0x20000000; /* Connect() */
+		static const DPNHANDLE TYPE_SEND    = 0x40000000; /* SendTo() */
+		static const DPNHANDLE TYPE_PINFO   = 0x60000000; /* SetPeerInfo() */
+		static const DPNHANDLE TYPE_CGROUP  = 0x80000000; /* CreateGroup() */
+		static const DPNHANDLE TYPE_DGROUP  = 0xA0000000; /* DestroyGroup() */
+		static const DPNHANDLE TYPE_APGROUP = 0xC0000000; /* AddPlayerToGroup() */
 		
 		AsyncHandleAllocator();
 		
@@ -44,6 +46,7 @@ class AsyncHandleAllocator
 		DPNHANDLE new_pinfo();
 		DPNHANDLE new_cgroup();
 		DPNHANDLE new_dgroup();
+		DPNHANDLE new_apgroup();
 };
 
 #endif /* !DPLITE_ASYNCHANDLEALLOCATOR_HPP */

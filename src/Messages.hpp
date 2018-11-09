@@ -59,6 +59,10 @@
  * WSTRING - DPN_APPLICATION_DESC.pwszSessionName
  * WSTRING - DPN_APPLICATION_DESC.pwszPassword
  * DATA    - DPN_APPLICATION_DESC.pvApplicationReservedData
+ * DWORD   - Number of groups the host player is a member of
+ *
+ * For each group:
+ *   DWORD - Group ID
 */
 
 #define DPLITE_MSGID_CONNECT_HOST_FAIL 5
@@ -125,6 +129,10 @@
  *
  * WSTRING - Player name (empty = none)
  * DATA    - Player data (empty = none)
+ * DWORD   - Number of groups the player is a member of
+ *
+ * For each group:
+ *   DWORD - Group ID
 */
 
 #define DPLITE_MSGID_CONNECT_PEER_FAIL 12
@@ -181,6 +189,45 @@
  * the group still existed after this was processed.
  *
  * DWORD - Group ID
+*/
+
+#define DPLITE_MSGID_GROUP_JOIN 18
+
+/* DPLITE_MSGID_GROUP_JOIN
+ * The peer that receives this message is being instructed to join a group.
+ *
+ * After processing and accepting this message, a peer should send a DPLITE_MSGID_GROUP_JOINED
+ * message to all peers. This ensures any AddPlayerToGroup() or RemovePlayerFromGroup() calls for
+ * a peer are serialised by that peer, so the session will become consistent if peers start
+ * calling them in rapid sucession.
+ *
+ * Only after sending DPLITE_MSGID_GROUP_JOINED, the peer should respond to the sender of the
+ * DPLITE_MSGID_GROUP_JOIN message with a DPLITE_MSGID_ACK.
+ *
+ * If the group isn't known to the receiver of this message (including being destroyed), that
+ * peer should locally instantiate the group. This is to allow for Peer A creating a group, then
+ * Peer B is informed of it and adds Peer C to it before the DPLITE_MSGID_GROUP_CREATE message
+ * from Peer A arrives at Peer C.
+ *
+ * DWORD   - Group ID
+ * DWORD   - Ack ID
+ * WSTRING - Group name (empty = none)
+ * DATA    - Group data (empty = none)
+*/
+
+#define DPLITE_MSGID_GROUP_JOINED 19
+
+/* DPLITE_MSGID_GROUP_JOINED
+ * The peer sending this message has joined a group.
+ *
+ * If the group isn't known to the receiver of this message (including being destroyed), that
+ * peer should locally instantiate the group. This is to allow for Peer A creating a group, then
+ * Peer B is informed of it and adds Peer C to it before the DPLITE_MSGID_GROUP_CREATE message
+ * from Peer A arrives at Peer C.
+ *
+ * DWORD   - Group ID
+ * WSTRING - Group name (empty = none)
+ * DATA    - Group data (empty = none)
 */
 
 #endif /* !DPLITE_MESSAGES_HPP */
