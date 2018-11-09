@@ -230,4 +230,29 @@
  * DATA    - Group data (empty = none)
 */
 
+#define DPLITE_MSGID_GROUP_LEAVE 20
+
+/* DPLITE_MSGID_GROUP_LEAVE
+ * The peer that receives this message is being instructed to leave a group.
+ *
+ * After processing and accepting this message, a peer should send a DPLITE_MSGID_GROUP_LEFT
+ * message to all peers. This ensures any AddPlayerToGroup() or RemovePlayerFromGroup() calls for
+ * a peer are serialised by that peer, so the session will become consistent if peers start
+ * calling them in rapid sucession.
+ *
+ * Only after sending DPLITE_MSGID_GROUP_LEFT, the peer should respond to the sender of the
+ * DPLITE_MSGID_GROUP_JOIN message with a DPLITE_MSGID_ACK.
+ *
+ * DWORD - Group ID
+ * DWORD - Ack ID
+*/
+
+#define DPLITE_MSGID_GROUP_LEFT 21
+
+/* DPLITE_MSGID_GROUP_LEFT
+ * The peer sending this message has left a group.
+ *
+ * DWORD   - Group ID
+*/
+
 #endif /* !DPLITE_MESSAGES_HPP */

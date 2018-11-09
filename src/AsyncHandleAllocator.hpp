@@ -26,6 +26,7 @@ class AsyncHandleAllocator
 		DPNHANDLE next_cgroup_id;
 		DPNHANDLE next_dgroup_id;
 		DPNHANDLE next_apgroup_id;
+		DPNHANDLE next_rpgroup_id;
 		
 	public:
 		static const DPNHANDLE TYPE_MASK    = 0xE0000000;
@@ -37,6 +38,7 @@ class AsyncHandleAllocator
 		static const DPNHANDLE TYPE_CGROUP  = 0x80000000; /* CreateGroup() */
 		static const DPNHANDLE TYPE_DGROUP  = 0xA0000000; /* DestroyGroup() */
 		static const DPNHANDLE TYPE_APGROUP = 0xC0000000; /* AddPlayerToGroup() */
+		static const DPNHANDLE TYPE_RPGROUP = 0xE0000000; /* RemovePlayerFromGroup() */
 		
 		AsyncHandleAllocator();
 		
@@ -47,6 +49,7 @@ class AsyncHandleAllocator
 		DPNHANDLE new_cgroup();
 		DPNHANDLE new_dgroup();
 		DPNHANDLE new_apgroup();
+		DPNHANDLE new_rpgroup();
 };
 
 #endif /* !DPLITE_ASYNCHANDLEALLOCATOR_HPP */

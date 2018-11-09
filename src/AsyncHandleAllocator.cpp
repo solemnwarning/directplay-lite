@@ -6,95 +6,61 @@ AsyncHandleAllocator::AsyncHandleAllocator():
 	next_enum_id(1),
 	next_connect_id(1),
 	next_send_id(1),
-	next_pinfo_id(1) {}
+	next_pinfo_id(1),
+	next_cgroup_id(1),
+	next_dgroup_id(1),
+	next_apgroup_id(1),
+	next_rpgroup_id(1) {}
 
-DPNHANDLE AsyncHandleAllocator::new_enum()
+static DPNHANDLE new_XXX(DPNHANDLE *next, DPNHANDLE type)
 {
-	DPNHANDLE handle = next_enum_id++ | TYPE_ENUM;
+	DPNHANDLE handle = (*next)++ | type;
 	
-	next_enum_id &= ~TYPE_MASK;
-	if(next_enum_id == 0)
+	(*next) &= ~AsyncHandleAllocator::TYPE_MASK;
+	if((*next) == 0)
 	{
-		next_enum_id = 1;
+		(*next) = 1;
 	}
 	
 	return handle;
+}
+
+DPNHANDLE AsyncHandleAllocator::new_enum()
+{
+	return new_XXX(&next_enum_id, TYPE_ENUM);
 }
 
 DPNHANDLE AsyncHandleAllocator::new_connect()
 {
-	DPNHANDLE handle = next_connect_id++ | TYPE_CONNECT;
-	
-	next_connect_id &= ~TYPE_MASK;
-	if(next_connect_id == 0)
-	{
-		next_connect_id = 1;
-	}
-	
-	return handle;
+	return new_XXX(&next_connect_id, TYPE_CONNECT);
 }
 
 DPNHANDLE AsyncHandleAllocator::new_send()
 {
-	DPNHANDLE handle = next_send_id++ | TYPE_SEND;
-	
-	next_send_id &= ~TYPE_MASK;
-	if(next_send_id == 0)
-	{
-		next_send_id = 1;
-	}
-	
-	return handle;
+	return new_XXX(&next_send_id, TYPE_SEND);
 }
 
 DPNHANDLE AsyncHandleAllocator::new_pinfo()
 {
-	DPNHANDLE handle = next_pinfo_id++ | TYPE_PINFO;
-	
-	next_pinfo_id &= ~TYPE_MASK;
-	if(next_pinfo_id == 0)
-	{
-		next_pinfo_id = 1;
-	}
-	
-	return handle;
+	return new_XXX(&next_pinfo_id, TYPE_PINFO);
 }
 
 DPNHANDLE AsyncHandleAllocator::new_cgroup()
 {
-	DPNHANDLE handle = next_cgroup_id++ | TYPE_CGROUP;
-	
-	next_cgroup_id &= ~TYPE_MASK;
-	if(next_cgroup_id == 0)
-	{
-		next_cgroup_id = 1;
-	}
-	
-	return handle;
+	return new_XXX(&next_cgroup_id, TYPE_CGROUP);
 }
 
 DPNHANDLE AsyncHandleAllocator::new_dgroup()
 {
-	DPNHANDLE handle = next_dgroup_id++ | TYPE_DGROUP;
-	
-	next_dgroup_id &= ~TYPE_MASK;
-	if(next_dgroup_id == 0)
-	{
-		next_dgroup_id = 1;
-	}
-	
-	return handle;
+	return new_XXX(&next_dgroup_id, TYPE_DGROUP);
 }
 
 DPNHANDLE AsyncHandleAllocator::new_apgroup()
 {
-	DPNHANDLE handle = next_apgroup_id++ | TYPE_APGROUP;
-	
-	next_apgroup_id &= ~TYPE_MASK;
-	if(next_apgroup_id == 0)
-	{
-		next_apgroup_id = 1;
-	}
-	
-	return handle;
+	return new_XXX(&next_apgroup_id, TYPE_APGROUP);
+}
+
+DPNHANDLE AsyncHandleAllocator::new_rpgroup()
+{
+	return new_XXX(&next_rpgroup_id, TYPE_RPGROUP);
 }

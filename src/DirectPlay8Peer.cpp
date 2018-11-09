@@ -1689,7 +1689,182 @@ HRESULT DirectPlay8Peer::AddPlayerToGroup(CONST DPNID idGroup, CONST DPNID idCli
 
 HRESULT DirectPlay8Peer::RemovePlayerFromGroup(CONST DPNID idGroup, CONST DPNID idClient, PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
 {
-	UNIMPLEMENTED("DirectPlay8Peer::RemovePlayerFromGroup");
+	std::unique_lock<std::mutex> l(lock);
+	
+	switch(state)
+	{
+		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
+		case STATE_INITIALISED:         return DPNERR_NOCONNECTION;
+		case STATE_HOSTING:             break;
+		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
+		case STATE_CONNECT_FAILED:      return DPNERR_CONNECTING;
+		case STATE_CONNECTED:           break;
+		case STATE_CLOSING:             return DPNERR_CONNECTIONLOST;
+		case STATE_TERMINATED:          return DPNERR_CONNECTIONLOST;
+	}
+	
+	Group *group = get_group_by_id(idGroup);
+	if(group == NULL)
+	{
+		return DPNERR_INVALIDGROUP;
+	}
+	
+	if(group->player_ids.find(idClient) == group->player_ids.end())
+	{
+		/* Not in group. */
+		return DPNERR_PLAYERNOTINGROUP;
+	}
+	
+	DPNHANDLE async_handle;
+	if(!(dwFlags & DPNREMOVEPLAYERFROMGROUP_SYNC))
+	{
+		async_handle = handle_alloc.new_rpgroup();
+		
+		if(phAsyncHandle != NULL)
+		{
+			*phAsyncHandle = async_handle;
+		}
+	}
+	
+	int *pending = new int(1);
+	std::condition_variable cv;
+	HRESULT s_result = S_OK;
+	
+	auto complete =
+		[this, pending, dwFlags, &cv, &s_result, async_handle, pvAsyncContext]
+		(std::unique_lock<std::mutex> &l, HRESULT result)
+	{
+		if(--(*pending) == 0)
+		{
+			if(dwFlags & DPNREMOVEPLAYERFROMGROUP_SYNC)
+			{
+				s_result = result;
+				cv.notify_one();
+			}
+			else{
+				DPNMSG_ASYNC_OP_COMPLETE oc;
+				memset(&oc, 0, sizeof(oc));
+				
+				oc.dwSize        = sizeof(oc);
+				oc.hAsyncOp      = async_handle;
+				oc.pvUserContext = pvAsyncContext;
+				oc.hResultCode   = result;
+				
+				l.unlock();
+				message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
+				l.lock();
+				
+				delete pending;
+			}
+		}
+	};
+	
+	if(idClient == local_player_id)
+	{
+		/* Removing ourself from the group. Notify everyone else in the session. */
+		
+		PacketSerialiser group_left(DPLITE_MSGID_GROUP_LEFT);
+		group_left.append_dword(idGroup);
+		
+		for(auto p = peers.begin(); p != peers.end(); ++p)
+		{
+			Peer *peer = p->second;
+			
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				++(*pending);
+				peer->sq.send(SendQueue::SEND_PRI_HIGH, group_left, NULL,
+					[complete]
+					(std::unique_lock<std::mutex> &l, HRESULT result)
+					{
+						if(result != S_OK)
+						{
+							log_printf("Failed to send DPLITE_MSGID_GROUP_LEFT, session may be out of sync!");
+						}
+						
+						complete(l, S_OK);
+					});
+			}
+		}
+		
+		/* And actually update the group and tell the application. */
+		
+		group->player_ids.erase(local_player_id);
+		
+		void *group_ctx = group->ctx;
+		std::thread t([this, idGroup, group_ctx, complete]()
+		{
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP rp;
+			memset(&rp, 0, sizeof(rp));
+			
+			rp.dwSize          = sizeof(rp);
+			rp.dpnidGroup      = idGroup;
+			rp.pvGroupContext  = group_ctx;
+			rp.dpnidPlayer     = local_player_id;
+			rp.pvPlayerContext = local_player_ctx;
+			
+			message_handler(message_handler_ctx, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP, &rp);
+			
+			std::unique_lock<std::mutex> l(lock);
+			complete(l, S_OK);
+		});
+		
+		t.detach();
+	}
+	else{
+		Peer *peer = get_peer_by_player_id(idClient);
+		if(peer == NULL)
+		{
+			return DPNERR_INVALIDPLAYER;
+		}
+		
+		/* We know this exists because get_peer_by_peer_id() just succeeded. */
+		unsigned int peer_id = player_to_peer_id[idClient];
+		
+		/* Adding a remote peer to a group, all we do is send it a
+		 * request to put itself into the group.
+		*/
+		
+		DWORD ack_id = peer->alloc_ack_id();
+		
+		PacketSerialiser group_leave(DPLITE_MSGID_GROUP_LEAVE);
+		group_leave.append_dword(idGroup);
+		group_leave.append_dword(ack_id);
+		
+		peer->sq.send(SendQueue::SEND_PRI_HIGH, group_leave, NULL,
+			[this, peer_id, ack_id, complete]
+			(std::unique_lock<std::mutex> &l, HRESULT result)
+			{
+				if(result == S_OK)
+				{
+					/* We'll only get called with S_OK immediately after a
+					 * send completes, so the peer must exist at this point.
+					*/
+					Peer *peer = get_peer_by_peer_id(peer_id);
+					assert(peer != NULL);
+					
+					peer->register_ack(ack_id, [complete](std::unique_lock<std::mutex> &l, HRESULT result)
+					{
+						complete(l, result);
+					});
+				}
+				else{
+					complete(l, result);
+				}
+			});
+	}
+	
+	if(dwFlags & DPNREMOVEPLAYERFROMGROUP_SYNC)
+	{
+		cv.wait(l, [&pending]() { return (*pending == 0); });
+		delete pending;
+		
+		return s_result;
+	}
+	else{
+		return DPNSUCCESS_PENDING;
+	}
 }
 
 HRESULT DirectPlay8Peer::SetGroupInfo(CONST DPNID dpnid, DPN_GROUP_INFO* CONST pdpnGroupInfo,PVOID CONST pvAsyncContext, DPNHANDLE* CONST phAsyncHandle, CONST DWORD dwFlags)
@@ -3364,6 +3539,18 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 					case DPLITE_MSGID_GROUP_JOINED:
 					{
 						handle_group_joined(l, peer_id, *pd);
+						break;
+					}
+					
+					case DPLITE_MSGID_GROUP_LEAVE:
+					{
+						handle_group_leave(l, peer_id, *pd);
+						break;
+					}
+					
+					case DPLITE_MSGID_GROUP_LEFT:
+					{
+						handle_group_left(l, peer_id, *pd);
 						break;
 					}
 					
@@ -5164,6 +5351,144 @@ void DirectPlay8Peer::handle_group_joined(std::unique_lock<std::mutex> &l, unsig
 	catch(const PacketDeserialiser::Error &e)
 	{
 		log_printf("Received invalid DPLITE_MSGID_GROUP_JOINED from peer %u: %s",
+			peer_id, e.what());
+	}
+}
+
+void DirectPlay8Peer::handle_group_leave(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DPNID group_id = pd.get_dword(0);
+		DWORD ack_id   = pd.get_dword(1);
+		
+		if(peer->state != Peer::PS_CONNECTED)
+		{
+			log_printf("Received unexpected DPLITE_MSGID_GROUP_LEAVE from peer %u, in state %u",
+				peer_id, (unsigned)(peer->state));
+			return;
+		}
+		
+		if(destroyed_groups.find(group_id) != destroyed_groups.end())
+		{
+			/* Group is already in the process of being destroyed. */
+			peer->send_ack(ack_id, DPNERR_INVALIDGROUP);
+			return;
+		}
+		
+		Group *group = get_group_by_id(group_id);
+		if(group == NULL)
+		{
+			/* Unknown group ID, probably normal. */
+			return;
+		}
+		
+		if(group->player_ids.find(local_player_id) == group->player_ids.end())
+		{
+			/* Already in group. */
+			peer->send_ack(ack_id, DPNERR_PLAYERNOTINGROUP);
+			return;
+		}
+		
+		PacketSerialiser group_left(DPLITE_MSGID_GROUP_LEFT);
+		group_left.append_dword(group_id);
+		
+		for(auto p = peers.begin(); p != peers.end(); ++p)
+		{
+			Peer *peer = p->second;
+			
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				peer->sq.send(SendQueue::SEND_PRI_HIGH, group_left, NULL,
+					[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+			}
+		}
+		
+		/* If the peer hasn't gone away, ack it. */
+		peer = get_peer_by_peer_id(peer_id);
+		if(peer != NULL)
+		{
+			peer->send_ack(ack_id, S_OK);
+		}
+		
+		group->player_ids.erase(local_player_id);
+		
+		DPNMSG_REMOVE_PLAYER_FROM_GROUP rp;
+		memset(&rp, 0, sizeof(rp));
+		
+		rp.dwSize          = sizeof(rp);
+		rp.dpnidGroup      = group_id;
+		rp.pvGroupContext  = group->ctx;
+		rp.dpnidPlayer     = local_player_id;
+		rp.pvPlayerContext = local_player_ctx;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP, &rp);
+		l.lock();
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		log_printf("Received invalid DPLITE_MSGID_GROUP_LEAVE from peer %u: %s",
+			peer_id, e.what());
+	}
+}
+
+void DirectPlay8Peer::handle_group_left(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DPNID group_id = pd.get_dword(0);
+		
+		if(peer->state != Peer::PS_CONNECTED)
+		{
+			log_printf("Received unexpected DPLITE_MSGID_GROUP_LEFT from peer %u, in state %u",
+				peer_id, (unsigned)(peer->state));
+			return;
+		}
+		
+		if(destroyed_groups.find(group_id) != destroyed_groups.end())
+		{
+			/* Group is already in the process of being destroyed. */
+			return;
+		}
+		
+		Group *group = get_group_by_id(group_id);
+		if(group == NULL)
+		{
+			/* Unknown group ID, probably normal. */
+			return;
+		}
+		
+		if(group->player_ids.find(peer->player_id) == group->player_ids.end())
+		{
+			/* Already in group. */
+			log_printf("Received DPLITE_MSGID_GROUP_LEFT from peer %u for group %u, but it isn't in group",
+				peer_id, (unsigned)(group_id));
+			return;
+		}
+		
+		group->player_ids.erase(peer->player_id);
+		
+		DPNMSG_REMOVE_PLAYER_FROM_GROUP rp;
+		memset(&rp, 0, sizeof(rp));
+		
+		rp.dwSize          = sizeof(rp);
+		rp.dpnidGroup      = group_id;
+		rp.pvGroupContext  = group->ctx;
+		rp.dpnidPlayer     = peer->player_id;
+		rp.pvPlayerContext = peer->player_ctx;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP, &rp);
+		l.lock();
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		log_printf("Received invalid DPLITE_MSGID_GROUP_LEFT from peer %u: %s",
 			peer_id, e.what());
 	}
 }
