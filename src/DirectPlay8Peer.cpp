@@ -482,17 +482,32 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 	
 	if(l_port == 0)
 	{
+		/* Start at a random point in the ephemeral port range and try each one, wrapping
+		 * around when we reach the end.
+		 *
+		 * Gets the "random" point by querying the performance counter rather than calling
+		 * rand() just in case the application relies on the RNG state.
+		*/
+		
+		LARGE_INTEGER p_counter;
+		QueryPerformanceCounter(&p_counter);
+		
+		int port_range = AUTO_PORT_MAX - AUTO_PORT_MIN;
+		int base_port  = p_counter.QuadPart % port_range;
+		
 		for(int p = AUTO_PORT_MIN; p <= AUTO_PORT_MAX; ++p)
 		{
 			/* TODO: Only continue if creation failed due to address conflict. */
 			
-			udp_socket = create_udp_socket(l_ipaddr, p);
+			int port = AUTO_PORT_MIN + ((base_port + p) % (port_range + 1));
+			
+			udp_socket = create_udp_socket(l_ipaddr, port);
 			if(udp_socket == -1)
 			{
 				continue;
 			}
 			
-			listener_socket = create_listener_socket(l_ipaddr, p);
+			listener_socket = create_listener_socket(l_ipaddr, port);
 			if(listener_socket == -1)
 			{
 				closesocket(udp_socket);
@@ -502,7 +517,7 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 			}
 			
 			local_ip   = l_ipaddr;
-			local_port = p;
+			local_port = port;
 			
 			break;
 		}
