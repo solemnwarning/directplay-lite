@@ -218,6 +218,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void peer_shutdown(std::unique_lock<std::mutex> &l, unsigned int peer_id, HRESULT outstanding_op_result, DWORD destroy_player_reason);
 		void peer_shutdown_all(std::unique_lock<std::mutex> &l, HRESULT outstanding_op_result, DWORD destroy_player_reason);
 		
+		void group_destroy_all(std::unique_lock<std::mutex> &l, DWORD dwReason);
+		
 		void close_main_sockets();
 		
 		void handle_host_enum_request(std::unique_lock<std::mutex> &l, const PacketDeserialiser &pd, const struct sockaddr_in *from_addr);
@@ -246,6 +248,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		HRESULT dispatch_message(std::unique_lock<std::mutex> &l, DWORD dwMessageType, PVOID pvMessage);
 		HRESULT dispatch_create_player(std::unique_lock<std::mutex> &l, DPNID dpnidPlayer, void **ppvPlayerContext);
 		HRESULT dispatch_destroy_player(std::unique_lock<std::mutex> &l, DPNID dpnidPlayer, void *pvPlayerContext, DWORD dwReason);
+		HRESULT dispatch_destroy_group(std::unique_lock<std::mutex> &l, DPNID dpnidGroup, void *pvGroupContext, DWORD dwReason);
 		
 	public:
 		DirectPlay8Peer(std::atomic<unsigned int> *global_refcount);

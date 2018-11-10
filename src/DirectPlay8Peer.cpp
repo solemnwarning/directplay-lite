@@ -2478,6 +2478,8 @@ HRESULT DirectPlay8Peer::Close(CONST DWORD dwFlags)
 		dispatch_destroy_player(l, local_player_id, local_player_ctx, DPNDESTROYPLAYERREASON_NORMAL);
 	}
 	
+	group_destroy_all(l, DPNDESTROYGROUPREASON_NORMAL);
+	
 	/* Wait for outstanding EnumHosts() calls. */
 	host_enum_completed.wait(l, [this]() { return async_host_enums.empty() && sync_host_enums.empty(); });
 	
@@ -2944,6 +2946,8 @@ HRESULT DirectPlay8Peer::TerminateSession(void* CONST pvTerminateData, CONST DWO
 	{
 		dispatch_destroy_player(l, cp->first, cp->second, DPNDESTROYPLAYERREASON_SESSIONTERMINATED);
 	}
+	
+	group_destroy_all(l, DPNDESTROYGROUPREASON_NORMAL);
 	
 	/* Destroy any peers which weren't fully connected. */
 	
@@ -3788,6 +3792,8 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 				auto peer_id = peers.begin()->first;
 				peer_destroy(l, peer_id, outstanding_op_result, destroy_player_reason);
 			}
+			
+			group_destroy_all(l, DPNDESTROYGROUPREASON_NORMAL);
 		}
 		
 		RENEW_PEER_OR_RETURN();
@@ -3879,6 +3885,23 @@ void DirectPlay8Peer::peer_shutdown_all(std::unique_lock<std::mutex> &l, HRESULT
 			}
 			#endif
 		}
+	}
+}
+
+void DirectPlay8Peer::group_destroy_all(std::unique_lock<std::mutex> &l, DWORD dwReason)
+{
+	for(std::map<DPNID, Group>::iterator g; (g = groups.begin()) != groups.end();)
+	{
+		DPNID group_id = g->first;
+		Group *group   = &(g->second);
+		
+		if(destroyed_groups.find(group_id) == destroyed_groups.end())
+		{
+			destroyed_groups.insert(group_id);
+			dispatch_destroy_group(l, group_id, group->ctx, dwReason);
+		}
+		
+		groups.erase(group_id);
 	}
 }
 
@@ -4581,6 +4604,8 @@ void DirectPlay8Peer::handle_connect_peer(std::unique_lock<std::mutex> &l, unsig
 	
 	/* Send DPLITE_MSGID_GROUP_CREATE for each group. */
 	
+	std::set<DPNID> member_group_ids;
+	
 	for(auto gi = groups.begin(); gi != groups.end(); ++gi)
 	{
 		DPNID group_id = gi->first;
@@ -4599,6 +4624,11 @@ void DirectPlay8Peer::handle_connect_peer(std::unique_lock<std::mutex> &l, unsig
 		
 		peer->sq.send(SendQueue::SEND_PRI_HIGH, group_create, NULL,
 			[](std::unique_lock<std::mutex> &l, HRESULT result) {});
+		
+		if(group->player_ids.find(local_player_id) != group->player_ids.end())
+		{
+			member_group_ids.insert(group_id);
+		}
 	}
 	
 	/* Send DPLITE_MSGID_CONNECT_PEER_OK. */
@@ -4607,7 +4637,12 @@ void DirectPlay8Peer::handle_connect_peer(std::unique_lock<std::mutex> &l, unsig
 	connect_peer_ok.append_wstring(local_player_name);
 	connect_peer_ok.append_data(local_player_data.data(), local_player_data.size());
 	
-	/* TODO: Include our group memberships. */
+	connect_peer_ok.append_dword(member_group_ids.size());
+	
+	for(auto i = member_group_ids.begin(); i != member_group_ids.end(); ++i)
+	{
+		connect_peer_ok.append_dword(*i);
+	}
 	
 	peer->sq.send(SendQueue::SEND_PRI_HIGH,
 		connect_peer_ok,
@@ -4655,6 +4690,14 @@ void DirectPlay8Peer::handle_connect_peer_ok(std::unique_lock<std::mutex> &l, un
 		(const unsigned char*)(player_data.first),
 		(const unsigned char*)(player_data.first) + player_data.second);
 	
+	DWORD peer_group_count = pd.get_dword(2);
+	std::set<DPNID> peer_groups;
+	
+	for(DWORD i = 0; i < peer_group_count; ++i)
+	{
+		peer_groups.insert(pd.get_dword(3 + i));
+	}
+	
 	peer->state = Peer::PS_CONNECTED;
 	
 	/* player_id initialised in handling of DPLITE_MSGID_CONNECT_HOST_OK. */
@@ -4677,7 +4720,46 @@ void DirectPlay8Peer::handle_connect_peer_ok(std::unique_lock<std::mutex> &l, un
 		peer->player_ctx = cp.pvPlayerContext;
 	}
 	
-	/* TODO: Add peer to specified groups. */
+	for(auto g = peer_groups.begin(); g != peer_groups.end(); ++g)
+	{
+		DPNID group_id = *g;
+		
+		if(destroyed_groups.find(group_id) != destroyed_groups.end())
+		{
+			/* Group is already in the process of being destroyed. */
+			continue;
+		}
+		
+		Group *group = get_group_by_id(group_id);
+		if(group == NULL)
+		{
+			/* Unknown group ID... very rarely normal. */
+			continue;
+		}
+		
+		if(group->player_ids.find(peer->player_id) != group->player_ids.end())
+		{
+			/* Already in group... somehow?! */
+			continue;
+		}
+		
+		group->player_ids.insert(peer->player_id);
+		
+		DPNMSG_ADD_PLAYER_TO_GROUP ap;
+		memset(&ap, 0, sizeof(ap));
+		
+		ap.dwSize          = sizeof(ap);
+		ap.dpnidGroup      = group_id;
+		ap.pvGroupContext  = group->ctx;
+		ap.dpnidPlayer     = peer->player_id;
+		ap.pvPlayerContext = peer->player_ctx;
+		
+		l.unlock();
+		message_handler(message_handler_ctx, DPN_MSGID_ADD_PLAYER_TO_GROUP, &ap);
+		l.lock();
+		
+		RENEW_PEER_OR_RETURN();
+	}
 	
 	connect_check(l);
 }
@@ -4966,6 +5048,8 @@ void DirectPlay8Peer::handle_destroy_peer(std::unique_lock<std::mutex> &l, unsig
 			}
 			
 			peer_shutdown_all(l, DPNERR_HOSTTERMINATEDSESSION, DPNDESTROYPLAYERREASON_SESSIONTERMINATED);
+			
+			group_destroy_all(l, DPNDESTROYGROUPREASON_SESSIONTERMINATED);
 		}
 		else{
 			/* The host called DestroyPeer() on another peer in the session.
@@ -5032,6 +5116,8 @@ void DirectPlay8Peer::handle_terminate_session(std::unique_lock<std::mutex> &l, 
 		dispatch_destroy_player(l, local_player_id, local_player_ctx, DPNDESTROYPLAYERREASON_SESSIONTERMINATED);
 		
 		peer_shutdown_all(l, DPNERR_HOSTTERMINATEDSESSION, DPNDESTROYPLAYERREASON_SESSIONTERMINATED);
+		
+		group_destroy_all(l, DPNDESTROYGROUPREASON_SESSIONTERMINATED);
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
@@ -5627,6 +5713,36 @@ HRESULT DirectPlay8Peer::dispatch_create_player(std::unique_lock<std::mutex> &l,
 
 HRESULT DirectPlay8Peer::dispatch_destroy_player(std::unique_lock<std::mutex> &l, DPNID dpnidPlayer, void *pvPlayerContext, DWORD dwReason)
 {
+	/* HACK: Remove the player ID from any groups it is still in. */
+	for(auto g = groups.begin(); g != groups.end();)
+	{
+		DPNID group_id = g->first;
+		Group *group = &(g->second);
+		
+		if(group->player_ids.find(dpnidPlayer) != group->player_ids.end())
+		{
+			group->player_ids.erase(dpnidPlayer);
+			
+			DPNMSG_REMOVE_PLAYER_FROM_GROUP rp;
+			memset(&rp, 0, sizeof(rp));
+			
+			rp.dwSize          = sizeof(rp);
+			rp.dpnidGroup      = group_id;
+			rp.pvGroupContext  = group->ctx;
+			rp.dpnidPlayer     = dpnidPlayer;
+			rp.pvPlayerContext = pvPlayerContext;
+			
+			l.unlock();
+			message_handler(message_handler_ctx, DPN_MSGID_REMOVE_PLAYER_FROM_GROUP, &rp);
+			l.lock();
+			
+			g = groups.begin();
+		}
+		else{
+			++g;
+		}
+	}
+	
 	DPNMSG_DESTROY_PLAYER dp;
 	memset(&dp, 0, sizeof(dp));
 	
@@ -5636,6 +5752,18 @@ HRESULT DirectPlay8Peer::dispatch_destroy_player(std::unique_lock<std::mutex> &l
 	dp.dwReason        = dwReason;
 	
 	return dispatch_message(l, DPN_MSGID_DESTROY_PLAYER, &dp);
+}
+
+HRESULT DirectPlay8Peer::dispatch_destroy_group(std::unique_lock<std::mutex> &l, DPNID dpnidGroup, void *pvGroupContext, DWORD dwReason)
+{
+	DPNMSG_DESTROY_GROUP dg;
+	
+	dg.dwSize         = sizeof(dg);
+	dg.dpnidGroup     = dpnidGroup;
+	dg.pvGroupContext = pvGroupContext;
+	dg.dwReason       = dwReason;
+	
+	return dispatch_message(l, DPN_MSGID_DESTROY_GROUP, &dg);
 }
 
 DirectPlay8Peer::Peer::Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port):
