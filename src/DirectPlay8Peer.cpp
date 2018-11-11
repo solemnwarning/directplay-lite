@@ -648,20 +648,38 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 		}
 	}
 	else{
-		/* TODO: Handle sending to a group. */
+		Peer *target_peer;
+		Group *target_group;
 		
 		if(dpnid == local_player_id)
 		{
 			send_to_self = true;
 		}
-		else{
-			Peer *target_peer = get_peer_by_player_id(dpnid);
-			if(target_peer == NULL)
-			{
-				return DPNERR_INVALIDPLAYER;
-			}
-			
+		else if((target_peer = get_peer_by_player_id(dpnid)) != NULL)
+		{
 			send_to_peers.push_back(target_peer);
+		}
+		else if((target_group = get_group_by_id(dpnid)) != NULL)
+		{
+			for(auto m = target_group->player_ids.begin(); m != target_group->player_ids.end(); ++m)
+			{
+				if(*m == local_player_id)
+				{
+					if(!(dwFlags & DPNSEND_NOLOOPBACK))
+					{
+						send_to_self = true;
+					}
+				}
+				else{
+					target_peer = get_peer_by_player_id(*m);
+					assert(target_peer != NULL);
+					
+					send_to_peers.push_back(target_peer);
+				}
+			}
+		}
+		else{
+			return DPNERR_INVALIDPLAYER;
 		}
 	}
 	
