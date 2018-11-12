@@ -138,7 +138,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			 * associated to which is called when we get a DPLITE_MSGID_ACK.
 			 */
 			DWORD next_ack_id;
-			std::map< DWORD, std::function<void(std::unique_lock<std::mutex>&, HRESULT)> > pending_acks;
+			std::map< DWORD, std::function<void(std::unique_lock<std::mutex>&, HRESULT, const void*, size_t)> > pending_acks;
 			
 			Peer(enum PeerState state, int sock, uint32_t ip, uint16_t port);
 			
@@ -147,7 +147,8 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 			
 			DWORD alloc_ack_id();
 			void register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback);
-			void send_ack(DWORD ack_id, HRESULT result);
+			void register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT, const void*, size_t)> &callback);
+			void send_ack(DWORD ack_id, HRESULT result, const void *data = NULL, size_t data_size = 0);
 		};
 		
 		DPNID local_player_id;
@@ -235,6 +236,7 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_appdesc(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_destroy_peer(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_terminate_session(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
+		void handle_group_allocate(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_group_create(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_group_destroy(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);
 		void handle_group_join(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd);

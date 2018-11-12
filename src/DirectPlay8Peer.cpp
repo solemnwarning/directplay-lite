@@ -1221,7 +1221,7 @@ HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, 
 		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
 		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
 		case STATE_CONNECT_FAILED:      return DPNERR_CONNECTING;
-		case STATE_CONNECTED:           return E_NOTIMPL; /* TODO: Need to get allocate ID from host */
+		case STATE_CONNECTED:           break;
 		case STATE_CLOSING:             return DPNERR_CONNECTIONLOST;
 		case STATE_TERMINATED:          return DPNERR_CONNECTIONLOST;
 	}
@@ -1237,32 +1237,20 @@ HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, 
 		return E_NOTIMPL;
 	}
 	
-	const wchar_t *group_name      = L"";
-	const void    *group_data      = NULL;
-	size_t         group_data_size = 0;
-	
+	std::wstring group_name;
 	if(pdpnGroupInfo->dwInfoFlags & DPNINFO_NAME)
 	{
 		group_name = pdpnGroupInfo->pwszName;
 	}
 	
+	std::vector<unsigned char> group_data;
 	if(pdpnGroupInfo->dwInfoFlags & DPNINFO_DATA)
 	{
-		group_data      = pdpnGroupInfo->pvData;
-		group_data_size = pdpnGroupInfo->dwDataSize;
+		group_data.reserve(pdpnGroupInfo->dwDataSize);
+		group_data.insert(group_data.end(),
+			(const unsigned char*)(pdpnGroupInfo->pvData),
+			(const unsigned char*)(pdpnGroupInfo->pvData) + pdpnGroupInfo->dwDataSize);
 	}
-	
-	DPNID group_id = next_player_id++;
-	
-	groups.emplace(
-		std::piecewise_construct,
-		std::forward_as_tuple(group_id),
-		std::forward_as_tuple(group_name, group_data, group_data_size, pvGroupContext));
-	
-	PacketSerialiser group_create(DPLITE_MSGID_GROUP_CREATE);
-	group_create.append_dword(group_id);
-	group_create.append_wstring(group_name);
-	group_create.append_data(group_data, group_data_size);
 	
 	DPNHANDLE async_handle;
 	if(!(dwFlags & DPNCREATEGROUP_SYNC))
@@ -1276,22 +1264,24 @@ HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, 
 	}
 	
 	std::mutex *cg_lock = new std::mutex;
-	int *cg_pending = new int(1);
+	int *pending = new int(1);
 	
-	std::condition_variable cg_cv;
+	std::condition_variable sync_cv;
+	HRESULT sync_result = S_OK;
 	
 	auto complete =
-		[cg_lock, cg_pending, dwFlags, &cg_cv, async_handle, pvAsyncContext, this]
-		(std::unique_lock<std::mutex> &l)
+		[cg_lock, pending, dwFlags, &sync_cv, &sync_result, async_handle, pvAsyncContext, this]
+		(std::unique_lock<std::mutex> &l, HRESULT result)
 	{
 		std::unique_lock<std::mutex> cgl(*cg_lock);
 		
-		if(--(*cg_pending) == 0)
+		if(--(*pending) == 0)
 		{
 			if(dwFlags & DPNCREATEGROUP_SYNC)
 			{
+				sync_result = result;
 				cgl.unlock();
-				cg_cv.notify_one();
+				sync_cv.notify_one();
 			}
 			else{
 				DPNMSG_ASYNC_OP_COMPLETE oc;
@@ -1300,7 +1290,7 @@ HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, 
 				oc.dwSize        = sizeof(oc);
 				oc.hAsyncOp      = async_handle;
 				oc.pvUserContext = pvAsyncContext;
-				oc.hResultCode   = S_OK;
+				oc.hResultCode   = result;
 				
 				l.unlock();
 				message_handler(message_handler_ctx, DPN_MSGID_ASYNC_OP_COMPLETE, &oc);
@@ -1308,79 +1298,142 @@ HRESULT DirectPlay8Peer::CreateGroup(CONST DPN_GROUP_INFO* CONST pdpnGroupInfo, 
 				
 				cgl.unlock();
 				
-				delete cg_pending;
+				delete pending;
 				delete cg_lock;
 			}
 		}
 	};
 	
-	std::unique_lock<std::mutex> cgl(*cg_lock);
-	
-	for(auto p = peers.begin(); p != peers.end(); ++p)
+	auto create_the_group =
+		[this, group_name, group_data, pvGroupContext, cg_lock, pending, complete]
+		(std::unique_lock<std::mutex> &l, DPNID group_id)
 	{
-		Peer *peer = p->second;
+		groups.emplace(
+			std::piecewise_construct,
+			std::forward_as_tuple(group_id),
+			std::forward_as_tuple(group_name, group_data.data(), group_data.size(), pvGroupContext));
 		
-		if(peer->state == Peer::PS_CONNECTED)
+		PacketSerialiser group_create(DPLITE_MSGID_GROUP_CREATE);
+		group_create.append_dword(group_id);
+		group_create.append_wstring(group_name);
+		group_create.append_data(group_data.data(), group_data.size());
+		
+		std::unique_lock<std::mutex> cgl(*cg_lock);
+		
+		for(auto p = peers.begin(); p != peers.end(); ++p)
 		{
-			++(*cg_pending);
+			Peer *peer = p->second;
 			
-			peer->sq.send(SendQueue::SEND_PRI_HIGH, group_create, NULL,
-				[complete]
-				(std::unique_lock<std::mutex> &l, HRESULT result)
-				{
-					if(result != S_OK)
+			if(peer->state == Peer::PS_CONNECTED)
+			{
+				++(*pending);
+				
+				peer->sq.send(SendQueue::SEND_PRI_HIGH, group_create, NULL,
+					[complete]
+					(std::unique_lock<std::mutex> &l, HRESULT result)
 					{
-						log_printf("Failed to send DPLITE_MSGID_GROUP_CREATE, session may be out of sync!");
-					}
-					
-					complete(l);
-				});
+						if(result != S_OK)
+						{
+							log_printf("Failed to send DPLITE_MSGID_GROUP_CREATE, session may be out of sync!");
+						}
+						
+						complete(l, S_OK);
+					});
+			}
 		}
-	}
-	
-	/* Raise local DPNMSG_CREATE_GROUP.
-	 * TODO: Do this in a properly managed worker thread.
-	*/
-	
-	std::thread t([this, group_id, pvGroupContext, complete]()
-	{
-		std::unique_lock<std::mutex> l(lock);
 		
-		DPNMSG_CREATE_GROUP cg;
-		memset(&cg, 0, sizeof(cg));
+		cgl.unlock();
 		
-		cg.dwSize         = sizeof(cg);
-		cg.dpnidGroup     = group_id;
-		cg.dpnidOwner     = 0;
-		cg.pvGroupContext = pvGroupContext;
-		cg.pvOwnerContext = local_player_ctx;
+		/* Raise local DPNMSG_CREATE_GROUP.
+		 * TODO: Do this in a properly managed worker thread.
+		*/
 		
-		l.unlock();
-		message_handler(message_handler_ctx, DPN_MSGID_CREATE_GROUP, &cg);
-		l.lock();
-		
-		Group *group = get_group_by_id(group_id);
-		if(group != NULL)
+		std::thread t([this, group_id, pvGroupContext, complete]()
 		{
-			group->ctx = cg.pvGroupContext;
-		}
+			std::unique_lock<std::mutex> l(lock);
+			
+			DPNMSG_CREATE_GROUP cg;
+			memset(&cg, 0, sizeof(cg));
+			
+			cg.dwSize         = sizeof(cg);
+			cg.dpnidGroup     = group_id;
+			cg.dpnidOwner     = 0;
+			cg.pvGroupContext = pvGroupContext;
+			cg.pvOwnerContext = local_player_ctx;
+			
+			l.unlock();
+			message_handler(message_handler_ctx, DPN_MSGID_CREATE_GROUP, &cg);
+			l.lock();
+			
+			Group *group = get_group_by_id(group_id);
+			if(group != NULL)
+			{
+				group->ctx = cg.pvGroupContext;
+			}
+			
+			complete(l, S_OK);
+		});
 		
-		complete(l);
-	});
+		t.detach();
+	};
 	
-	t.detach();
+	if(local_player_id == host_player_id)
+	{
+		DPNID group_id = next_player_id++;
+		create_the_group(l, group_id);
+	}
+	else{
+		DPNID host_id = host_player_id;
+		
+		Peer *host = get_peer_by_player_id(host_id);
+		assert(host != NULL);
+		
+		DWORD ack_id = host->alloc_ack_id();
+		
+		PacketSerialiser group_allocate(DPLITE_MSGID_GROUP_ALLOCATE);
+		group_allocate.append_dword(ack_id);
+		
+		host->sq.send(SendQueue::SEND_PRI_HIGH, group_allocate, NULL,
+			[this, ack_id, host_id, create_the_group, complete]
+			(std::unique_lock<std::mutex> &l, HRESULT result)
+			{
+				if(result == S_OK)
+				{
+					Peer *host = get_peer_by_player_id(host_id);
+					assert(host != NULL);
+					
+					host->register_ack(ack_id,
+						[create_the_group, complete]
+						(std::unique_lock<std::mutex> &l, DWORD result, const void *data, size_t data_size)
+						{
+							if(result == S_OK && data_size == sizeof(DPNID))
+							{
+								DPNID group_id = *(DPNID*)(data);
+								create_the_group(l, group_id);
+							}
+							else{
+								complete(l, result);
+							}
+						});
+				}
+				else{
+					complete(l, result);
+				}
+			});
+	}
 	
 	if(dwFlags & DPNCREATEGROUP_SYNC)
 	{
 		l.unlock();
 		
-		cg_cv.wait(cgl, [&cg_pending]() { return (*cg_pending == 0); });
+		std::unique_lock<std::mutex> cgl(*cg_lock);
+		sync_cv.wait(cgl, [&pending]() { return (*pending == 0); });
 		cgl.unlock();
 		
-		delete cg_pending;
+		delete pending;
 		delete cg_lock;
 		
-		return S_OK;
+		return sync_result;
 	}
 	else{
 		return DPNSUCCESS_PENDING;
@@ -3555,6 +3608,12 @@ void DirectPlay8Peer::io_peer_recv(std::unique_lock<std::mutex> &l, unsigned int
 						break;
 					}
 					
+					case DPLITE_MSGID_GROUP_ALLOCATE:
+					{
+						handle_group_allocate(l, peer_id, *pd);
+						break;
+					}
+					
 					case DPLITE_MSGID_GROUP_CREATE:
 					{
 						handle_group_create(l, peer_id, *pd);
@@ -3771,10 +3830,10 @@ void DirectPlay8Peer::peer_destroy(std::unique_lock<std::mutex> &l, unsigned int
 	{
 		auto ai = peer->pending_acks.begin();
 		
-		std::function<void(std::unique_lock<std::mutex>&, HRESULT)> callback = ai->second;
+		std::function<void(std::unique_lock<std::mutex>&, HRESULT, const void*, size_t)> callback = ai->second;
 		peer->pending_acks.erase(ai);
 		
-		callback(l, outstanding_op_result);
+		callback(l, outstanding_op_result, NULL, 0);
 		
 		RENEW_PEER_OR_RETURN();
 	}
@@ -4909,6 +4968,7 @@ void DirectPlay8Peer::handle_playerinfo(std::unique_lock<std::mutex> &l, unsigne
 		PacketSerialiser ack(DPLITE_MSGID_ACK);
 		ack.append_dword(ack_id);
 		ack.append_dword(S_OK);
+		ack.append_data(NULL, 0);
 		
 		peer->sq.send(SendQueue::SEND_PRI_HIGH, ack, NULL,
 			[](std::unique_lock<std::mutex> &l, HRESULT s_result) {});
@@ -4937,8 +4997,9 @@ void DirectPlay8Peer::handle_ack(std::unique_lock<std::mutex> &l, unsigned int p
 	assert(peer != NULL);
 	
 	try {
-		DWORD ack_id = pd.get_dword(0);
-		HRESULT result = pd.get_dword(1);
+		DWORD                          ack_id = pd.get_dword(0);
+		HRESULT                        result = pd.get_dword(1);
+		std::pair<const void*, size_t> data   = pd.get_data(2);
 		
 		auto ai = peer->pending_acks.find(ack_id);
 		if(ai == peer->pending_acks.end())
@@ -4948,10 +5009,10 @@ void DirectPlay8Peer::handle_ack(std::unique_lock<std::mutex> &l, unsigned int p
 			return;
 		}
 		
-		std::function<void(std::unique_lock<std::mutex>&, HRESULT)> callback = ai->second;
+		std::function<void(std::unique_lock<std::mutex>&, HRESULT, const void*, size_t)> callback = ai->second;
 		peer->pending_acks.erase(ai);
 		
-		callback(l, result);
+		callback(l, result, data.first, data.second);
 	}
 	catch(const PacketDeserialiser::Error &e)
 	{
@@ -5155,6 +5216,32 @@ void DirectPlay8Peer::handle_terminate_session(std::unique_lock<std::mutex> &l, 
 	catch(const PacketDeserialiser::Error &e)
 	{
 		log_printf("Received invalid DPLITE_MSGID_TERMINATE_SESSION from peer %u: %s",
+			peer_id, e.what());
+	}
+}
+
+void DirectPlay8Peer::handle_group_allocate(std::unique_lock<std::mutex> &l, unsigned int peer_id, const PacketDeserialiser &pd)
+{
+	Peer *peer = get_peer_by_peer_id(peer_id);
+	assert(peer != NULL);
+	
+	try {
+		DWORD ack_id = pd.get_dword(0);
+		
+		if(peer->state != Peer::PS_CONNECTED)
+		{
+			log_printf("Received unexpected DPLITE_MSGID_GROUP_ALLOCATE from peer %u, in state %u",
+				peer_id, (unsigned)(peer->state));
+			return;
+		}
+		
+		DPNID group_id = next_player_id++;
+		
+		peer->send_ack(ack_id, S_OK, &group_id, sizeof(group_id));
+	}
+	catch(const PacketDeserialiser::Error &e)
+	{
+		log_printf("Received invalid DPLITE_MSGID_GROUP_ALLOCATE from peer %u: %s",
 			peer_id, e.what());
 	}
 }
@@ -5846,15 +5933,24 @@ DWORD DirectPlay8Peer::Peer::alloc_ack_id()
 
 void DirectPlay8Peer::Peer::register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT)> &callback)
 {
+	register_ack(id, [callback](std::unique_lock<std::mutex> &l, HRESULT result, const void *data, size_t data_size)
+	{
+		callback(l, result);
+	});
+}
+
+void DirectPlay8Peer::Peer::register_ack(DWORD id, const std::function<void(std::unique_lock<std::mutex>&, HRESULT, const void*, size_t)> &callback)
+{
 	assert(pending_acks.find(id) == pending_acks.end());
 	pending_acks.emplace(id, callback);
 }
 
-void DirectPlay8Peer::Peer::send_ack(DWORD ack_id, HRESULT result)
+void DirectPlay8Peer::Peer::send_ack(DWORD ack_id, HRESULT result, const void *data, size_t data_size)
 {
 	PacketSerialiser ack(DPLITE_MSGID_ACK);
 	ack.append_dword(ack_id);
 	ack.append_dword(result);
+	ack.append_data(data, data_size);
 	
 	sq.send(SendQueue::SEND_PRI_HIGH, ack, NULL,
 		[](std::unique_lock<std::mutex> &l, HRESULT result) {});

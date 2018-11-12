@@ -99,6 +99,7 @@
  *
  * DWORD - Ack ID, should be unique to the peer, for a time.
  * DWORD - Result code (normally S_OK)
+ * DATA  - Response payload
 */
 
 #define DPLITE_MSGID_APPDESC 9
@@ -163,6 +164,20 @@
  * session simultaneously.
  *
  * DATA - pvTerminateData passed to IDirectPlay8Peer::TerminateSession()
+*/
+
+#define DPLITE_MSGID_GROUP_ALLOCATE 15
+
+/* DPLITE_MSGID_GROUP_ALLOCATE
+ * A non-host peer is requesting a unique group ID.
+ *
+ * All player/group IDs are allocated by the host peer, so any other peer must
+ * use this message to allocate an ID from the host.
+ *
+ * The host will respond with a DPLITE_MSGID_ACK with the ID to use encoded as
+ * a DPNID in the payload.
+ *
+ * DWORD - Ack ID
 */
 
 #define DPLITE_MSGID_GROUP_CREATE 16
