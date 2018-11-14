@@ -23,6 +23,10 @@ static void _log_init()
 	if(log_name != NULL)
 	{
 		log_fh = fopen(log_name, "a");
+		if(log_fh != NULL)
+		{
+			setbuf(log_fh, NULL);
+		}
 	}
 	
 	const char *t = getenv("DPLITE_TRACE");

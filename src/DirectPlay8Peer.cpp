@@ -789,9 +789,12 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 				delete result;
 				delete pending;
 				
-				l.unlock();
-				message_handler(message_handler_ctx, DPN_MSGID_SEND_COMPLETE, &sc);
-				l.lock();
+				if(!(dwFlags & DPNSEND_NOCOMPLETE))
+				{
+					l.unlock();
+					message_handler(message_handler_ctx, DPN_MSGID_SEND_COMPLETE, &sc);
+					l.lock();
+				}
 			}
 		};
 		
@@ -1967,12 +1970,12 @@ HRESULT DirectPlay8Peer::GetGroupInfo(CONST DPNID dpnid, DPN_GROUP_INFO* CONST p
 		case STATE_NEW:                 return DPNERR_UNINITIALIZED;
 		case STATE_INITIALISED:         return DPNERR_NOCONNECTION;
 		case STATE_HOSTING:             break;
-		case STATE_CONNECTING_TO_HOST:  return DPNERR_CONNECTING;
-		case STATE_CONNECTING_TO_PEERS: return DPNERR_CONNECTING;
-		case STATE_CONNECT_FAILED:      return DPNERR_CONNECTING;
+		case STATE_CONNECTING_TO_HOST:  break;
+		case STATE_CONNECTING_TO_PEERS: break;
+		case STATE_CONNECT_FAILED:      break;
 		case STATE_CONNECTED:           break;
-		case STATE_CLOSING:             return DPNERR_CONNECTIONLOST;
-		case STATE_TERMINATED:          return DPNERR_CONNECTIONLOST;
+		case STATE_CLOSING:             break;
+		case STATE_TERMINATED:          break;
 	}
 	
 	Group *group = get_group_by_id(dpnid);
