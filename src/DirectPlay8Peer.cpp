@@ -481,6 +481,25 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 		return DPNERR_INVALIDHOSTADDRESS;
 	}
 	
+	const char *override_ip = getenv("DPLITE_CONNECT_IP");
+	if(override_ip != NULL)
+	{
+		struct in_addr hostname_addr;
+		if(inet_pton(AF_INET, override_ip, &hostname_addr) == 1)
+		{
+			log_printf(
+				"DPLITE_CONNECT_IP environment variable is set, connecting to '%s' instead",
+				override_ip);
+			r_ipaddr = hostname_addr.s_addr;
+		}
+		else{
+			log_printf(
+				"DPLITE_CONNECT_IP environment variable contains invalid IP address: %s",
+				override_ip);
+			return DPNERR_INVALIDHOSTADDRESS;
+		}
+	}
+	
 	if(l_port == 0)
 	{
 		/* Start at a random point in the ephemeral port range and try each one, wrapping
