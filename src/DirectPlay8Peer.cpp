@@ -435,6 +435,8 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 			return DPNERR_INVALIDHOSTADDRESS;
 		}
 		
+		log_printf("hostname = '%S'", hostname_value);
+		
 		if(host_sp == CLSID_DP8SP_TCPIP)
 		{
 			struct in_addr hostname_addr;
@@ -474,6 +476,8 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 		{
 			return DPNERR_INVALIDHOSTADDRESS;
 		}
+		
+		log_printf("port = %d", (int)(port_value));
 		
 		r_port = port_value;
 	}
@@ -3317,6 +3321,8 @@ void DirectPlay8Peer::io_peer_connected(std::unique_lock<std::mutex> &l, unsigne
 	{
 		/* TCP connection established. */
 		
+		log_printf("peer_id %u TCP connection established", peer_id);
+		
 		if(peer->state == Peer::PS_CONNECTING_HOST)
 		{
 			PacketSerialiser connect_host(DPLITE_MSGID_CONNECT_HOST);
@@ -3379,6 +3385,8 @@ void DirectPlay8Peer::io_peer_connected(std::unique_lock<std::mutex> &l, unsigne
 	}
 	else{
 		/* TCP connection failed. */
+		
+		log_printf("peer_id %u TCP connection failed: %s", peer_id, win_strerror(error).c_str());
 		
 		if(peer->state == Peer::PS_CONNECTING_HOST)
 		{
@@ -3839,6 +3847,11 @@ bool DirectPlay8Peer::peer_connect(Peer::PeerState initial_state, uint32_t remot
 	r_addr.sin_family      = AF_INET;
 	r_addr.sin_addr.s_addr = remote_ip;
 	r_addr.sin_port        = htons(remote_port);
+	
+	char s_ip[16];
+	inet_ntop(AF_INET, &(r_addr.sin_addr), s_ip, sizeof(s_ip));
+	
+	log_printf("Initiating connection to %s:%d as peer_id %u", s_ip, (int)(remote_port), peer_id);
 	
 	if(connect(peer->sock, (struct sockaddr*)(&r_addr), sizeof(r_addr)) != -1 || WSAGetLastError() != WSAEWOULDBLOCK)
 	{
