@@ -2,6 +2,9 @@
 
 setlocal EnableDelayedExpansion
 
+SET DEBUG=
+REM SET DEBUG=/debug
+
 REM .obj files to be compiled from .cc source files
 SET CC_OBJS=^
  googletest/src/gtest-all.obj^
@@ -139,21 +142,21 @@ FOR %%o IN (%C_OBJS%) DO (
 )
 
 echo ==
-echo == link /debug /out:tests/all-tests.exe %TEST_OBJS% %TEST_LIBS%
+echo == link %DEBUG% /out:tests/all-tests.exe %TEST_OBJS% %TEST_LIBS%
 echo ==
-        link /debug /out:tests/all-tests.exe %TEST_OBJS% %TEST_LIBS% || exit /b
+        link %DEBUG% /out:tests/all-tests.exe %TEST_OBJS% %TEST_LIBS% || exit /b
 echo:
 
 echo ==
-echo == link /debug /out:tests/soak-peer-client.exe tests/soak-peer-client.obj dxguid.lib ole32.lib
+echo == link %DEBUG% /out:tests/soak-peer-client.exe tests/soak-peer-client.obj dxguid.lib ole32.lib
 echo ==
-        link /debug /out:tests/soak-peer-client.exe tests/soak-peer-client.obj dxguid.lib ole32.lib || exit /b
+        link %DEBUG% /out:tests/soak-peer-client.exe tests/soak-peer-client.obj dxguid.lib ole32.lib || exit /b
 echo:
 
 echo ==
-echo == link /debug /out:tests/soak-peer-server.exe tests/soak-peer-server.obj dxguid.lib ole32.lib
+echo == link %DEBUG% /out:tests/soak-peer-server.exe tests/soak-peer-server.obj dxguid.lib ole32.lib
 echo ==
-        link /debug /out:tests/soak-peer-server.exe tests/soak-peer-server.obj dxguid.lib ole32.lib || exit /b
+        link %DEBUG% /out:tests/soak-peer-server.exe tests/soak-peer-server.obj dxguid.lib ole32.lib || exit /b
 echo:
 
 FOR %%o IN (%HOOK_DLLS%) DO (
@@ -164,10 +167,10 @@ FOR %%o IN (%HOOK_DLLS%) DO (
 	echo:
 	
 	echo ==
-	echo == link /dll /out:hookdll/%%o.dll /def:hookdll/%%o.def hookdll/%%o.obj %HOOK_OBJS% %HOOK_LIBS%
+	echo == link %DEBUG% /dll /out:hookdll/%%o.dll /def:hookdll/%%o.def hookdll/%%o.obj %HOOK_OBJS% %HOOK_LIBS%
 	echo ==
-	        link /dll /out:hookdll/%%o.dll /def:hookdll/%%o.def hookdll/%%o.obj %HOOK_OBJS% %HOOK_LIBS% || exit /b
+	        link %DEBUG% /dll /out:hookdll/%%o.dll /def:hookdll/%%o.def hookdll/%%o.obj %HOOK_OBJS% %HOOK_LIBS% || exit /b
 	echo:
 )
 
-link /dll /out:dpnet.dll /def:src/dpnet.def %DPNET_OBJS% %DPNET_LIBS% || exit /b
+link %DEBUG% /dll /out:dpnet.dll /def:src/dpnet.def %DPNET_OBJS% %DPNET_LIBS% || exit /b
