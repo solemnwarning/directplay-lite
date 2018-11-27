@@ -7,6 +7,7 @@
 #include <map>
 #include <mutex>
 #include <objbase.h>
+#include <queue>
 #include <stdint.h>
 #include <windows.h>
 
@@ -68,6 +69,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		EventObject other_socket_event;
 		
 		HandleHandlingPool *worker_pool;
+		
+		std::queue< std::function<void()> > work_queue;
+		EventObject work_ready;
 		
 		SendQueue udp_sq;
 		
@@ -206,6 +210,9 @@ class DirectPlay8Peer: public IDirectPlay8Peer
 		void handle_udp_socket_event();
 		void io_udp_send(std::unique_lock<std::mutex> &l);
 		void handle_other_socket_event();
+		
+		void queue_work(const std::function<void()> &work);
+		void handle_work();
 		
 		void io_peer_triggered(unsigned int peer_id);
 		void io_peer_connected(std::unique_lock<std::mutex> &l, unsigned int peer_id);

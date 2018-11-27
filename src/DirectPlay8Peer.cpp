@@ -124,6 +124,7 @@ HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSA
 	
 	worker_pool->add_handle(udp_socket_event,   [this]() { handle_udp_socket_event();   });
 	worker_pool->add_handle(other_socket_event, [this]() { handle_other_socket_event(); });
+	worker_pool->add_handle(work_ready,         [this]() { handle_work(); });
 	
 	state = STATE_INITIALISED;
 	
@@ -832,9 +833,7 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 			unsigned char *payload_copy = new unsigned char[payload_size];
 			memcpy(payload_copy, payload.data(), payload_size);
 			
-			/* TODO: Do this in a properly managed worker thread. */
-			
-			std::thread t([this, payload_size, payload_copy, handle_send_complete, dwFlags]()
+			queue_work([this, payload_size, payload_copy, handle_send_complete, dwFlags]()
 			{
 				std::unique_lock<std::mutex> l(lock);
 				
@@ -861,8 +860,6 @@ HRESULT DirectPlay8Peer::SendTo(CONST DPNID dpnid, CONST DPN_BUFFER_DESC* CONST 
 				
 				handle_send_complete(l, S_OK);
 			});
-			
-			t.detach();
 		}
 		
 		return DPNSUCCESS_PENDING;
@@ -3187,6 +3184,35 @@ void DirectPlay8Peer::handle_other_socket_event()
 	}
 	
 	peer_accept(l);
+}
+
+void DirectPlay8Peer::queue_work(const std::function<void()> &work)
+{
+	work_queue.push(work);
+	SetEvent(work_ready);
+}
+
+void DirectPlay8Peer::handle_work()
+{
+	std::unique_lock<std::mutex> l(lock);
+	
+	if(!work_queue.empty())
+	{
+		std::function<void()> work = work_queue.front();
+		work_queue.pop();
+		
+		if(!work_queue.empty())
+		{
+			/* Wake up another thread, in case we are heavily loaded and the pool isn't
+			 * keeping up with the events from queue_work()
+			*/
+			SetEvent(work_ready);
+		}
+		
+		l.unlock();
+		
+		work();
+	}
 }
 
 void DirectPlay8Peer::io_peer_triggered(unsigned int peer_id)
