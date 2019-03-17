@@ -1,6 +1,6 @@
 #!/usr/bin/perl
 # DirectPlay Lite - Hook DLL stub function generator
-# Copyright (C) 2018 Daniel Collins
+# Copyright (C) 2018 Daniel Collins <solemnwarning@solemnwarning.net>
 #
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by

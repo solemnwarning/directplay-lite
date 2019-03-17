@@ -35,6 +35,6 @@ New hook DLLs can be built by dumping a list of exported functions from the DLL 
 
 ## Copyright
 
-Copyright © 2018 Daniel Collins
+Copyright © 2018 Daniel Collins <solemnwarning@solemnwarning.net>
 
 Includes the [Minhook](https://github.com/TsudaKageyu/minhook) library by Tsuda Kageyu.
