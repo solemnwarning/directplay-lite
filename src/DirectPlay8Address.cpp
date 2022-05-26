@@ -75,7 +75,7 @@ DirectPlay8Address *DirectPlay8Address::create_host_address(std::atomic<unsigned
 		/* TCP/IP service provider, just stick the IP in the hostname field. */
 		
 		char hostname[16];
-		inet_ntop(AF_INET, &(sa_v4->sin_addr), hostname, sizeof(hostname));
+		inet_ntop(AF_INET, (void*)(&(sa_v4->sin_addr)), hostname, sizeof(hostname));
 		
 		address->AddComponent(DPNA_KEY_HOSTNAME,
 			hostname, strlen(hostname) + 1, DPNA_DATATYPE_STRING_ANSI);
