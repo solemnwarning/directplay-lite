@@ -10,7 +10,7 @@ Rather than being a full reimplementation of the DirectPlay specification, Direc
 
 ## Building
 
-All programs and DLLs in the distribution can be built by running `build.bat` from the x86 Visual Studio command prompt.
+Use the `directplay-lite.sln` solution in Visual Studio 2017 or later.
 
 ## Using
 

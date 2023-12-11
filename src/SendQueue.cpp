@@ -155,6 +155,10 @@ SendQueue::SendOp *SendQueue::remove_queued_by_priority(SendPriority priority)
 		case SEND_PRI_HIGH:
 			queue = &high_queue;
 			break;
+
+		default:
+			/* Unreachable. */
+			abort();
 	}
 	
 	for(auto it = queue->begin(); it != queue->end(); ++it)

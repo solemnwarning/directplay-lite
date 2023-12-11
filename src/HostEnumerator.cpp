@@ -27,7 +27,7 @@
 #include "Messages.hpp"
 #include "packet.hpp"
 
-const GUID GUID_NULL = { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } };
+// const GUID GUID_NULL = { 0, 0, 0, { 0, 0, 0, 0, 0, 0, 0, 0 } };
 
 HostEnumerator::HostEnumerator(
 	std::atomic<unsigned int> * const global_refcount,

@@ -5,3 +5,9 @@
 *.exe
 *.pdb
 *.ilk
+*.vcxproj.user
+
+Debug/
+Release/
+
+/.vs/

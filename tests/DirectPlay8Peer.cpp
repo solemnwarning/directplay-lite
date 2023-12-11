@@ -2749,7 +2749,7 @@ TEST(DirectPlay8Peer, HostPeerSoftClose)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -2992,7 +2992,7 @@ TEST(DirectPlay8Peer, HostPeerHardClose)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -3235,7 +3235,7 @@ TEST(DirectPlay8Peer, NonHostPeerSoftClose)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -3405,7 +3405,7 @@ TEST(DirectPlay8Peer, NonHostPeerHardClose)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -3802,10 +3802,10 @@ TEST(DirectPlay8Peer, SetApplicationDesc)
 		ASSERT_EQ(host->GetApplicationDesc(appdesc, &appdesc_size, 0), S_OK);
 		
 		appdesc->dwMaxPlayers = 20;
-		appdesc->pwszSessionName = L"Best Session";
+		appdesc->pwszSessionName = (WCHAR*)(L"Best Session");
 		
 		appdesc->dwFlags |= DPNSESSION_REQUIREPASSWORD;
-		appdesc->pwszPassword = L"P4ssword";
+		appdesc->pwszPassword = (WCHAR*)(L"P4ssword");
 		
 		appdesc->pvApplicationReservedData     = (void*)(APP_DATA);
 		appdesc->dwApplicationReservedDataSize = sizeof(APP_DATA);
@@ -7309,7 +7309,7 @@ TEST(DirectPlay8Peer, EnumPlayersTooSmall)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -7374,7 +7374,7 @@ TEST(DirectPlay8Peer, EnumPlayersExact)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -7461,7 +7461,7 @@ TEST(DirectPlay8Peer, EnumPlayersTooBig)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -7550,7 +7550,7 @@ TEST(DirectPlay8Peer, DestroyPeer)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -7705,7 +7705,7 @@ TEST(DirectPlay8Peer, TerminateSession)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -7949,7 +7949,7 @@ TEST(DirectPlay8Peer, CreateGroupSync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -8022,7 +8022,7 @@ TEST(DirectPlay8Peer, CreateGroupSync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -8136,7 +8136,7 @@ TEST(DirectPlay8Peer, CreateGroupAsync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -8225,7 +8225,7 @@ TEST(DirectPlay8Peer, CreateGroupAsync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -8327,7 +8327,7 @@ TEST(DirectPlay8Peer, CreateGroupBeforeJoin)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -8362,7 +8362,7 @@ TEST(DirectPlay8Peer, CreateGroupBeforeJoin)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -8519,7 +8519,7 @@ TEST(DirectPlay8Peer, CreateGroupNonHost)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -8622,7 +8622,7 @@ TEST(DirectPlay8Peer, CreateGroupNonHost)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -8748,7 +8748,7 @@ TEST(DirectPlay8Peer, DestroyGroupSync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -8813,7 +8813,7 @@ TEST(DirectPlay8Peer, DestroyGroupSync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -8917,7 +8917,7 @@ TEST(DirectPlay8Peer, DestroyGroupAsync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -8982,7 +8982,7 @@ TEST(DirectPlay8Peer, DestroyGroupAsync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9083,7 +9083,7 @@ TEST(DirectPlay8Peer, DestroyGroupBeforeJoin)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9112,7 +9112,7 @@ TEST(DirectPlay8Peer, DestroyGroupBeforeJoin)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9215,7 +9215,7 @@ TEST(DirectPlay8Peer, DestroyGroupByLocalCloseSoft)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9263,7 +9263,7 @@ TEST(DirectPlay8Peer, DestroyGroupByLocalCloseSoft)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9321,7 +9321,7 @@ TEST(DirectPlay8Peer, DestroyGroupByLocalCloseHard)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9369,7 +9369,7 @@ TEST(DirectPlay8Peer, DestroyGroupByLocalCloseHard)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9427,7 +9427,7 @@ TEST(DirectPlay8Peer, DestroyGroupByHostCloseSoft)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9475,7 +9475,7 @@ TEST(DirectPlay8Peer, DestroyGroupByHostCloseSoft)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9529,7 +9529,7 @@ TEST(DirectPlay8Peer, DestroyGroupByHostCloseHard)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9577,7 +9577,7 @@ TEST(DirectPlay8Peer, DestroyGroupByHostCloseHard)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9631,7 +9631,7 @@ TEST(DirectPlay8Peer, DestroyGroupByTerminateSession)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9679,7 +9679,7 @@ TEST(DirectPlay8Peer, DestroyGroupByTerminateSession)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9733,7 +9733,7 @@ TEST(DirectPlay8Peer, DestroyGroupByDestroyPeer)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9781,7 +9781,7 @@ TEST(DirectPlay8Peer, DestroyGroupByDestroyPeer)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -9837,7 +9837,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupSync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -9906,7 +9906,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupSync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -10019,7 +10019,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupAsync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -10088,7 +10088,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupAsync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -10206,7 +10206,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupBeforeJoin)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -10237,7 +10237,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupBeforeJoin)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -10387,7 +10387,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupByPeer)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -10456,7 +10456,7 @@ TEST(DirectPlay8Peer, AddPlayerToGroupByPeer)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = (void*)(GROUP_DATA);
 	group_info.dwDataSize = sizeof(GROUP_DATA);
 	group_info.dwGroupFlags = 0;
@@ -10556,7 +10556,7 @@ TEST(DirectPlay8Peer, AddOtherPlayerToGroup)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -10659,7 +10659,7 @@ TEST(DirectPlay8Peer, AddOtherPlayerToGroup)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -10779,7 +10779,7 @@ TEST(DirectPlay8Peer, AddOtherPlayerToGroupBeforeJoin)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -10848,7 +10848,7 @@ TEST(DirectPlay8Peer, AddOtherPlayerToGroupBeforeJoin)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -11041,7 +11041,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupSync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -11106,7 +11106,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupSync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -11203,7 +11203,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupAsync)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -11268,7 +11268,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupAsync)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -11382,7 +11382,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupBeforeJoin)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -11411,7 +11411,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupBeforeJoin)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -11513,7 +11513,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupByPeer)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -11578,7 +11578,7 @@ TEST(DirectPlay8Peer, RemovePlayerFromGroupByPeer)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -11675,7 +11675,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroup)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -11772,7 +11772,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroup)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -11898,7 +11898,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByLocalCloseSoft)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -11978,7 +11978,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByLocalCloseSoft)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -12062,7 +12062,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByLocalCloseHard)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -12142,7 +12142,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByLocalCloseHard)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -12226,7 +12226,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByHostCloseSoft)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -12306,7 +12306,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByHostCloseSoft)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -12391,7 +12391,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByHostCloseHard)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -12471,7 +12471,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByHostCloseHard)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -12556,7 +12556,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByTerminateSession)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -12636,7 +12636,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByTerminateSession)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -12721,7 +12721,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByMemberCloseSoft)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -12801,7 +12801,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByMemberCloseSoft)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -12866,7 +12866,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByMemberCloseHard)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -12946,7 +12946,7 @@ TEST(DirectPlay8Peer, RemoveOtherPlayerFromGroupByMemberCloseHard)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -13011,7 +13011,7 @@ TEST(DirectPlay8Peer, SendToGroupSelf)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -13102,7 +13102,7 @@ TEST(DirectPlay8Peer, SendToGroupSelf)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -13174,7 +13174,7 @@ TEST(DirectPlay8Peer, SendToGroupSelfNoLoopback)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -13265,7 +13265,7 @@ TEST(DirectPlay8Peer, SendToGroupSelfNoLoopback)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -13329,7 +13329,7 @@ TEST(DirectPlay8Peer, SendToGroupPeer)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -13420,7 +13420,7 @@ TEST(DirectPlay8Peer, SendToGroupPeer)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -13488,7 +13488,7 @@ TEST(DirectPlay8Peer, SendToGroupPeerNoLoopback)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -13579,7 +13579,7 @@ TEST(DirectPlay8Peer, SendToGroupPeerNoLoopback)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -13647,7 +13647,7 @@ TEST(DirectPlay8Peer, SendToGroupPeerAndSelf)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -13738,7 +13738,7 @@ TEST(DirectPlay8Peer, SendToGroupPeerAndSelf)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;
@@ -13819,7 +13819,7 @@ TEST(DirectPlay8Peer, SendToGroupPeerAndSelfNoLoopback)
 	
 	app_desc.dwSize          = sizeof(app_desc);
 	app_desc.guidApplication = APP_GUID_1;
-	app_desc.pwszSessionName = L"Session 1";
+	app_desc.pwszSessionName = (WCHAR*)(L"Session 1");
 	
 	IDP8AddressInstance host_addr(CLSID_DP8SP_TCPIP, PORT);
 	
@@ -13910,7 +13910,7 @@ TEST(DirectPlay8Peer, SendToGroupPeerAndSelfNoLoopback)
 	
 	group_info.dwSize = sizeof(group_info);
 	group_info.dwInfoFlags = DPNINFO_NAME | DPNINFO_DATA;
-	group_info.pwszName = L"Test Group";
+	group_info.pwszName = (WCHAR*)(L"Test Group");
 	group_info.pvData = NULL;
 	group_info.dwDataSize = 0;
 	group_info.dwGroupFlags = 0;

@@ -151,8 +151,8 @@ HRESULT DirectPlay8Peer::Initialize(PVOID CONST pvUserContext, CONST PFNDPNMESSA
 
 HRESULT DirectPlay8Peer::EnumServiceProviders(CONST GUID* CONST pguidServiceProvider, CONST GUID* CONST pguidApplication, DPN_SERVICE_PROVIDER_INFO* CONST pSPInfoBuffer, DWORD* CONST pcbEnumData, DWORD* CONST pcReturned, CONST DWORD dwFlags)
 {
-	static const DPN_SERVICE_PROVIDER_INFO IP_INFO  = { 0, CLSID_DP8SP_TCPIP, L"DirectPlay8 TCP/IP Service Provider", 0, 0 };
-	static const DPN_SERVICE_PROVIDER_INFO IPX_INFO = { 0, CLSID_DP8SP_IPX,   L"DirectPlay8 IPX Service Provider",    0, 0 };
+	static const DPN_SERVICE_PROVIDER_INFO IP_INFO  = { 0, CLSID_DP8SP_TCPIP, (WCHAR*)(L"DirectPlay8 TCP/IP Service Provider"), 0, 0 };
+	static const DPN_SERVICE_PROVIDER_INFO IPX_INFO = { 0, CLSID_DP8SP_IPX,   (WCHAR*)(L"DirectPlay8 IPX Service Provider"),    0, 0 };
 	
 	std::unique_lock<std::mutex> l(lock);
 	
