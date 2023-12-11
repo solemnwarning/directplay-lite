@@ -1,5 +1,5 @@
 /* DirectPlay Lite
- * Copyright (C) 2018 Daniel Collins <solemnwarning@solemnwarning.net>
+ * Copyright (C) 2018-2023 Daniel Collins <solemnwarning@solemnwarning.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 #define DPLITE_FACTORY_HPP
 
 #include <atomic>
+#include <new>
 
 template<typename T, const IID &IMPLEMENTS> class Factory: public IClassFactory
 {
@@ -100,6 +101,24 @@ template<typename T, const IID &IMPLEMENTS> class Factory: public IClassFactory
 		{
 			return S_OK;
 		}
+
+		static HRESULT CreateFactoryInstance(void **ppvObject, std::atomic<unsigned int> *global_refcount)
+		{
+			try {
+				*((IUnknown**)(ppvObject)) = new Factory(global_refcount);
+				return S_OK;
+			}
+			catch (const std::bad_alloc&)
+			{
+				return E_OUTOFMEMORY;
+			}
+			catch (...)
+			{
+				return E_UNEXPECTED;
+			}
+		}
 };
+
+typedef HRESULT(*CreateFactoryInstanceFunc)(void**, std::atomic<unsigned int> *);
 
 #endif /* !DPLITE_FACTORY_HPP */
