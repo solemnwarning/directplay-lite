@@ -1,5 +1,5 @@
 /* DirectPlay Lite
- * Copyright (C) 2018 Daniel Collins <solemnwarning@solemnwarning.net>
+ * Copyright (C) 2018-2023 Daniel Collins <solemnwarning@solemnwarning.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,8 @@ struct TLVChunk
 {
 	uint32_t type;
 	uint32_t value_length;
+
+#pragma warning(suppress: 4200)
 	unsigned char value[0];
 };
 

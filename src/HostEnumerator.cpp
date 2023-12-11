@@ -1,5 +1,5 @@
 /* DirectPlay Lite
- * Copyright (C) 2018 Daniel Collins <solemnwarning@solemnwarning.net>
+ * Copyright (C) 2018-2023 Daniel Collins <solemnwarning@solemnwarning.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -133,7 +133,7 @@ HostEnumerator::HostEnumerator(
 				throw COMAPIException(DPNERR_INVALIDHOSTADDRESS);
 			}
 			
-			send_addr.sin_port = htons(port_value);
+			send_addr.sin_port = htons((uint16_t)(port_value));
 		}
 	}
 	
@@ -284,7 +284,7 @@ void HostEnumerator::handle_packet(const void *data, size_t size, struct sockadd
 	try {
 		pd.reset(new PacketDeserialiser(data, size));
 	}
-	catch(const PacketDeserialiser::Error &e)
+	catch(const PacketDeserialiser::Error &)
 	{
 		/* Malformed packet received */
 		return;
@@ -333,7 +333,7 @@ void HostEnumerator::handle_packet(const void *data, size_t size, struct sockadd
 		
 		request_tick_count = pd->get_dword(8);
 	}
-	catch(const PacketDeserialiser::Error &e)
+	catch(const PacketDeserialiser::Error &)
 	{
 		/* Malformed packet received */
 		return;

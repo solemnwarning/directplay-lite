@@ -1,5 +1,5 @@
 /* DirectPlay Lite
- * Copyright (C) 2018 Daniel Collins <solemnwarning@solemnwarning.net>
+ * Copyright (C) 2018-2023 Daniel Collins <solemnwarning@solemnwarning.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,8 @@
 
 #include "../src/DirectPlay8Address.hpp"
 #include "../src/DirectPlay8Peer.hpp"
+
+#pragma warning(disable: 4065) /* switch statement contains 'default' but no 'case' labels */
 
 // #define INSTANTIATE_FROM_COM
 
@@ -9162,8 +9164,6 @@ TEST(DirectPlay8Peer, DestroyGroupBeforeJoin)
 	}
 	
 	TestPeer peer1("peer1");
-	
-	DPNID p1_cg_dpnidGroup;
 	
 	peer1.expect_begin();
 	peer1.expect_push([&host](DWORD dwMessageType, PVOID pMessage)

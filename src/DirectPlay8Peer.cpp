@@ -1,5 +1,5 @@
 /* DirectPlay Lite
- * Copyright (C) 2018 Daniel Collins <solemnwarning@solemnwarning.net>
+ * Copyright (C) 2018-2023 Daniel Collins <solemnwarning@solemnwarning.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -497,7 +497,7 @@ HRESULT DirectPlay8Peer::Connect(CONST DPN_APPLICATION_DESC* CONST pdnAppDesc, I
 		
 		log_printf("port = %d", (int)(port_value));
 		
-		r_port = port_value;
+		r_port = (uint16_t)(port_value);
 	}
 	else{
 		return DPNERR_INVALIDHOSTADDRESS;
@@ -3146,7 +3146,7 @@ void DirectPlay8Peer::handle_udp_socket_event()
 		try {
 			pd.reset(new PacketDeserialiser(recv_buf, r));
 		}
-		catch(const PacketDeserialiser::Error &e)
+		catch(const PacketDeserialiser::Error &)
 		{
 			/* Malformed packet received */
 			return;
@@ -3197,7 +3197,7 @@ void DirectPlay8Peer::handle_other_socket_event()
 			try {
 				pd.reset(new PacketDeserialiser(recv_buf, r));
 			}
-			catch(const PacketDeserialiser::Error &e)
+			catch(const PacketDeserialiser::Error &)
 			{
 				/* Malformed packet received */
 				return;
